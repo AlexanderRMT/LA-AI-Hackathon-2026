@@ -38,9 +38,16 @@
 
 /* BCM GPIO numbers, physical header pin in parentheses */
 #define PIN_RELAY       17      /* (11) relay IN, energized = valve open */
-#define PIN_LED_OPEN    27      /* (13) green LED */
-#define PIN_LED_TRIP    22      /* (15) red LED */
 #define PIN_BUZZER      23      /* (16) active buzzer */
+/* LED panel, row 1: gas and valve */
+#define PIN_LED_OPEN    21      /* (40) green: valve open */
+#define PIN_LED_LEAK    20      /* (38) red: tripped on a leak */
+#define PIN_LED_GAS     16      /* (36) yellow: the latest verdict is gas */
+/* LED panel, row 2: system health */
+#define PIN_LED_ALIVE   13      /* (33) green: blinks while vision's verdicts arrive in time */
+#define PIN_LED_READY   19      /* (35) yellow: tripped, and a reset would be accepted now */
+#define PIN_LED_FAULT   26      /* (37) red: tripped because vision went silent, or still booting */
+#define ALIVE_BLINK_VERDICTS 3  /* alive LED toggles every this many verdicts (~1.7 Hz at 10 Hz) */
 #define PIN_BUTTON      24      /* (18) reset button */
 #define RELAY_ACTIVE_HIGH    1   /* 0 if your relay module switches on with a LOW input */
 #define BUTTON_PRESSED_LEVEL 0   /* pin is pulled up, so pressed reads 0; flip if your module drives high */
@@ -80,7 +87,8 @@ static void gpio_setup(void)
         perror("[supervisor] open /dev/gpio/msg, continuing without GPIO");
         return;
     }
-    const unsigned outs[] = { PIN_RELAY, PIN_LED_OPEN, PIN_LED_TRIP, PIN_BUZZER };
+    const unsigned outs[] = { PIN_RELAY, PIN_BUZZER, PIN_LED_OPEN, PIN_LED_LEAK, PIN_LED_GAS,
+                              PIN_LED_ALIVE, PIN_LED_READY, PIN_LED_FAULT };
     for (unsigned i = 0; i < sizeof outs / sizeof outs[0]; i++) {
         if (gpio_msg(RPI_GPIO_SET_SELECT, outs[i], RPI_GPIO_FUNC_OUT) == -1) {
             perror("[supervisor] set GPIO as output");
@@ -174,11 +182,17 @@ static const char *reason_str(uint32_t r)
 static void apply_outputs_locked(uint64_t t)
 {
     const int open = !S.tripped;
+    const int fresh = S.last_verdict_ns &&
+                      (t - S.last_verdict_ns) < (uint64_t)MIRAGE_DEADLINE_MS * 1000000ull;
     gpio_set(PIN_RELAY, RELAY_ACTIVE_HIGH ? open : !open);
-    gpio_set(PIN_LED_OPEN, open);
-    gpio_set(PIN_LED_TRIP, !open);
     gpio_set(PIN_BUZZER, S.tripped && S.reason != MIRAGE_TRIP_BOOT &&
                          (t - S.trip_ns) < (uint64_t)BUZZ_MS * 1000000ull);
+    gpio_set(PIN_LED_OPEN, open);
+    gpio_set(PIN_LED_LEAK, S.tripped && S.reason == MIRAGE_TRIP_LEAK);
+    gpio_set(PIN_LED_GAS, fresh && S.gas_run > 0);
+    gpio_set(PIN_LED_ALIVE, fresh && (S.n_verdicts / ALIVE_BLINK_VERDICTS) % 2 == 0);
+    gpio_set(PIN_LED_READY, S.tripped && fresh && S.clear_run >= MIRAGE_RESET_CLEAR);
+    gpio_set(PIN_LED_FAULT, S.tripped && S.reason != MIRAGE_TRIP_LEAK);
 }
 
 static void trip_locked(uint32_t reason, uint64_t t)
@@ -264,7 +278,7 @@ static void on_tick(void)
         S.reset_request = 0;
         try_reset_locked(t);
     }
-    apply_outputs_locked(t);   /* cached, so only the buzzer timeout ever changes here */
+    apply_outputs_locked(t);   /* cached, so only changed levels (blink, timeouts) are written */
     pthread_mutex_unlock(&S.lock);
 }
 
