@@ -27,6 +27,7 @@ static int g_thumb_sock = -1;
 static sockaddr_in g_thumb_dst;
 static const float kPhysicsGasPx = 0.30f;      // fallback rule before the model exists
 static int g_link = -1;                         // supervisor reachable? -1 until the first verdict
+static mirage_status_t g_status;                // supervisor's reply to the last verdict
 
 static uint64_t mono_ns()
 {
@@ -99,6 +100,9 @@ bool mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns, mirage_verdict_t* 
     v.sent_ns = mono_ns();
     mirage_status_t st;
     const int link = g_client.send(v, &st) ? 1 : 0;
+    if (link) {
+        g_status = st;
+    }
     if (link != g_link) {                       // report changes, not every verdict
         std::fprintf(stderr, link ? "[vision] connected to the supervisor\n"
                                   : "[vision] supervisor not reachable, verdicts are dropped\n");
@@ -117,4 +121,20 @@ bool mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns, mirage_verdict_t* 
         *verdict = v;
     }
     return true;
+}
+
+int mirage_valve_state(uint32_t* reason)
+{
+    if (g_link != 1) {
+        return -1;
+    }
+    if (reason) {
+        *reason = g_status.reason;
+    }
+    return g_status.valve_open ? 1 : 0;
+}
+
+cv::Mat mirage_shift_map(int width)
+{
+    return g_engine ? g_engine->visual(width) : cv::Mat();
 }

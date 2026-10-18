@@ -11,7 +11,7 @@ CXX = q++ -Vgcc_ntoaarch64le
 CXXFLAGS = -std=gnu++17 -O2 -Wall -Wextra $(EXTRA_CXXFLAGS)
 
 VISION = mirage-starter/vision
-VISION_SRCS = $(VISION)/mirage_vision.cpp $(VISION)/mirage_hook.cpp $(VISION)/bos_engine.cpp camera_frame.cpp jpeg_encoder.cpp
+VISION_SRCS = $(VISION)/mirage_vision.cpp $(VISION)/mirage_hook.cpp $(VISION)/bos_engine.cpp $(VISION)/web_view.cpp camera_frame.cpp jpeg_encoder.cpp
 OPENCV_CXXFLAGS = $(shell pkg-config --cflags opencv4 2>/dev/null || echo -I/usr/include/opencv4)
 VISION_LIBS = -lopencv_video -lopencv_imgcodecs -lopencv_imgproc -lopencv_core -ltensorflow-lite
 

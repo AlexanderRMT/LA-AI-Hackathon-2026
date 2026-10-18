@@ -6,6 +6,7 @@
 //
 // Usage:
 //   mirage_vision [-u unit] [-r height] [-w warmup] [-s x,y,w,h] [-m model] [-d dir] [-i mac_ip]
+//                 [-p port] [-R]
 //
 //   -u  camera unit (default 4 = Pi Camera Module 3 in the Pi 5's second port; 3 = first port)
 //   -r  use the smallest camera resolution at least this tall (default 864). Shifts are measured
@@ -15,6 +16,9 @@
 //   -m  TFLite model; without one, a big shift counts as gas
 //   -d  record fields to this folder, named after the label (mkdir -p it first)
 //   -i  IP of the Mac running mac/dashboard.py, for shift-map thumbnails
+//   -p  port for the browser view at http://<pi>:<port>/ (default 8080; 0 = off). It renders on
+//       threads below the vision thread, and only while someone is watching
+//   -R  rotate the browser view 180 degrees (camera mounted upside down); detection unaffected
 //
 // The first processed frame is saved to /tmp/frame.bmp with the dot screen boxed in red, so
 // pull_frame.ps1 shows exactly what the engine sees. After a bump,
@@ -40,6 +44,7 @@
 
 #include "../../camera_frame.h"
 #include "mirage_hook.hpp"
+#include "web_view.hpp"
 
 namespace {
 
@@ -47,6 +52,7 @@ using Clock = std::chrono::steady_clock;
 
 const char kSnapshotPath[] = "/tmp/frame.bmp";      // where pull_frame.ps1 looks
 const char kSnapshotTmp[] = "/tmp/frame.tmp.bmp";   // imwrite picks the format from the extension
+const int kWebPriority = 10;                        // below vision (20) and cpu_hog's lighter run (15)
 
 std::atomic<bool> gRunning{true};
 std::atomic<bool> gNewReference{false};
@@ -72,6 +78,7 @@ struct VisionState {
     bool warnedUnsupported = false;
     Frame rgb;
     cv::Mat converted;
+    WebViewFrame web;         // buffers for the browser view, swapped with its render thread
 
     // Shared with the main thread
     std::mutex mutex;
@@ -165,6 +172,18 @@ void onFrame(camera_handle_t handle, camera_buffer_t* buffer, void* arg)
     bool produced = mirage_on_frame(gray, 0, &v);
     double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
 
+    // A copy of the frame (well under a millisecond) is all the browser view costs this thread
+    if (produced && web_view_wanted()) {
+        WebViewFrame& w = s->web;
+        gray.copyTo(w.gray);
+        w.roi = s->roi;
+        w.shiftMap = mirage_shift_map(256);
+        w.verdict = v;
+        w.valve = mirage_valve_state(&w.reason);
+        w.procMs = ms;
+        web_view_publish(w);
+    }
+
     std::lock_guard<std::mutex> lock(s->mutex);
     if (wantSnapshot) {
         gray.copyTo(s->snapshot);   // written by the main thread: disk I/O here could delay verdicts
@@ -227,10 +246,12 @@ int main(int argc, char* argv[])
 {
     camera_unit_t unit = static_cast<camera_unit_t>(4);
     long height = 864;
+    long port = 8080;
+    bool rotate = false;
     VisionState state;
 
     int opt;
-    while ((opt = getopt(argc, argv, "u:r:w:s:m:d:i:h")) != -1) {
+    while ((opt = getopt(argc, argv, "u:r:w:s:m:d:i:p:Rh")) != -1) {
         switch (opt) {
         case 'u': unit = static_cast<camera_unit_t>(parseLong(optarg, "unit", 1, CAMERA_UNIT_NUM_UNITS - 1)); break;
         case 'r': height = parseLong(optarg, "height", 0, 4096); break;
@@ -239,9 +260,11 @@ int main(int argc, char* argv[])
         case 'm': state.modelPath = optarg; break;
         case 'd': state.dumpDir = optarg; break;
         case 'i': state.dashboardIp = optarg; break;
+        case 'p': port = parseLong(optarg, "port", 0, 65535); break;
+        case 'R': rotate = true; break;
         default:
-            std::printf("Usage: %s [-u unit] [-r height] [-w warmup] [-s x,y,w,h] [-m model] [-d dir] [-i mac_ip]\n",
-                        argv[0]);
+            std::printf("Usage: %s [-u unit] [-r height] [-w warmup] [-s x,y,w,h] [-m model] [-d dir] [-i mac_ip]"
+                        " [-p port] [-R]\n", argv[0]);
             return (opt == 'h') ? EXIT_SUCCESS : EXIT_FAILURE;
         }
     }
@@ -285,6 +308,9 @@ int main(int argc, char* argv[])
     }
     std::printf("Mirage vision on CAMERA_UNIT_%d (Ctrl+C to stop, `slay -s SIGUSR1 mirage_vision` for a new reference)\n",
                 (int)unit);
+    if (port > 0 && web_view_start(static_cast<int>(port), kWebPriority, rotate)) {
+        std::printf("[vision] browser view on http://qnxpi.local:%ld/\n", port);
+    }
     std::fflush(stdout);
 
     // Saves snapshots and prints stats every 2 s, so the camera thread never waits on the disk
