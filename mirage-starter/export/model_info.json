@@ -1,0 +1,88 @@
+{
+  "input": [
+    1,
+    64,
+    64,
+    8
+  ],
+  "dtype": "float32",
+  "channels": "dx, dy for each field, oldest first",
+  "clip_px": 4.0,
+  "scale": 0.5,
+  "proc_hz": 10.0,
+  "labels": [
+    "clear",
+    "gas",
+    "heat",
+    "motion"
+  ],
+  "active_px": {
+    "gas": 0.12,
+    "heat": 0.04,
+    "motion": 0.1
+  },
+  "ops": "CONV_2D v1, MEAN v1, FULLY_CONNECTED v1, SOFTMAX v1",
+  "training": {
+    "script": "mac/train_tuned.py",
+    "data": [
+      "pi_dumps"
+    ],
+    "epochs": 30,
+    "seed": 0,
+    "stride": 1,
+    "solid_px": 3.0,
+    "zoom": 0.3,
+    "zoom_px": [
+      0.03,
+      0.6
+    ],
+    "gas_bias": -1.5,
+    "gas_on_s": [
+      0.5,
+      3.5
+    ],
+    "train_counts": {
+      "clear": 3804,
+      "gas": 1059,
+      "heat": 1794,
+      "motion": 1897
+    },
+    "held_out_check": {
+      "gas_clips": 5,
+      "gas_clips_tripped": 5,
+      "presses": 50,
+      "presses_hit": 47,
+      "median_latency_s": 1.0,
+      "trips_before_first_press": 5,
+      "other_clips": 10,
+      "false_trips": 2,
+      "false_gas_frames": 0.0036616915422885573,
+      "confusion": [
+        [
+          3739,
+          42,
+          0,
+          23
+        ],
+        [
+          101,
+          928,
+          0,
+          30
+        ],
+        [
+          0,
+          0,
+          1760,
+          34
+        ],
+        [
+          519,
+          22,
+          13,
+          1343
+        ]
+      ]
+    }
+  }
+}

@@ -83,3 +83,39 @@ about 100,000,000. `train.py` warns per clip when they don’t.
   image overflowed and was clipped.
 - Shift-map thumbnails never arrived before: QNX refuses UDP datagrams over 9216 bytes and the JPEGs
   were bigger. mirage_vision now steps the quality down until they fit (~7 KB).
+
+## mac/ model v1 (Gio)
+
+- **train_tuned.py** (new): trains model v1 on the Pi dumps. It imports train.py's windows,
+  preprocessing, model and TFLite export, so the contract holds (float32 1x64x64x8 in, 1x4 softmax
+  out; CONV_2D, MEAN, FULLY_CONNECTED, SOFTMAX, all v1; 198 KB, same size and speed as v0).
+  train.py is unchanged. `python mac/train_tuned.py --data pi_dumps --check` (held-out check, then
+  train on every clip and write export/), about 8 min on an M1.
+- `--check` scores every clip with a model trained without it, through the supervisor's own rule
+  (top class gas or p_gas >= 0.60, 3 in a row close the valve). On the 15 clips of 2026-10-18:
+  **47 of 50 lighter presses closed the valve, median 1.0 s after the press started; 2 false trips
+  on 10 clear, heat and motion clips (both in one hand-waving clip); 0 on clear, the mug and table
+  taps; 0.37% of their frames read as gas.** train.py's settings, in the same kind of held-out check,
+  gave 45 of 50 presses and 6 false trips (2.8% of frames). gas_lighter_04 (nearer the screen) is the
+  weak one: 7 of 10.
+- What changed, each kept only because the held-out check improved:
+  - Gas labels from the press timing: `presses.txt` in each gas clip folder lists the press start
+    times (5, 10, ... 50 s). A frame is gas while gas can be in the box (0.5 to 3.5 s after a press
+    starts) and the shift shows; strong frames between presses, and frames with something solid in
+    the box (over 3 px: the lighter dipped in), are left out of training.
+  - Synthetic table taps on 30% of training windows. After median bump removal a tap leaves a
+    whole-box zoom (an affine fit explains 96% of what's left; gas 6%), so the model learns that a
+    smooth zoom is not gas. With them the unseen tap clip had no false trips in all three runs
+    (0 to 19 without, depending on the random seed).
+  - Gas bias -1.5 on the last layer: fewer gas verdicts on borderline frames at no cost in presses.
+- Tried and dropped: mixing clear-clip noise into every window, random signal strength, the data
+  report's higher thresholds, and labeling strong synthetic taps as motion (the model then called
+  people walking past gas).
+- **test_train_tuned.py** (new): with no `presses.txt` and the taps off, windows, labels, class
+  weights and augmented batches equal train.py's value for value; also checks the press labels, the
+  taps, the gas bias and the trip rule. `python mac/test_train_tuned.py`
+- For the record, not changed: the 5 "trips before the first press" in the held-out check are at the
+  bottom rows of the box, sometimes before anyone was in view. Butane is twice as dense as air and the
+  gas clips were recorded back to back, so these are probably real gas pooled from earlier presses.
+  An affine fit instead of the median in bump removal would take tap zoom out before the model sees
+  it; that is contract 3 (BosParams and mac/*.py), so only with all three of us.
