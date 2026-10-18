@@ -68,3 +68,18 @@ next_proc_ns_ = (next_proc_ns_ && frame_ns < next_proc_ns_ + period_ns) ? next_p
 
 Quick check after it’s in: in any dump’s `meta.csv`, consecutive `frame_ns` values should differ by
 about 100,000,000. `train.py` warns per clip when they don’t.
+
+## Web console: camera view and new reference frame (Alex)
+
+- While telemetry is live from the Pi, the image panel shows **Camera**: mirage_vision's own view of
+  the dot screen region with a margin around it (MJPEG from `http://<pi>:8080/region`, shift map
+  glowing over the region, box green on clear and red on gas, status bar underneath). Without a live
+  Pi (nothing yet, or fake_pi.py) or if that stream can't be reached, it falls back to the shift-map
+  thumbnail as before. `--pi-view-port` if mirage_vision runs with a different `-p`.
+- **New reference frame** button in that panel: POST `/api/reference`, which the console forwards to
+  the Pi's mirage_vision (same as `slay -s SIGUSR1 mirage_vision`). Same guard as the simulator
+  controls (loopback, `X-Mirage-Control`, same origin). It's the one thing the console sends the Pi.
+- `.stage img` is now pinned to the stage: `height: 100%` doesn't resolve in a grid item, so a tall
+  image overflowed and was clipped.
+- Shift-map thumbnails never arrived before: QNX refuses UDP datagrams over 9216 bytes and the JPEGs
+  were bigger. mirage_vision now steps the quality down until they fit (~7 KB).

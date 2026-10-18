@@ -73,6 +73,10 @@
     <header class="panel-head">
       <h2 id="view-title">Shift map</h2>
       <span class="meta" id="img-meta"></span>
+      <button class="btn btn-sm" id="ref-btn" type="button" hidden
+              title="Clear the dot screen first: the next camera frame becomes the background the shifts are measured against">
+        <span>New reference frame</span>
+      </button>
       <div class="colorbar" role="img" aria-label="Color scale: black is no dot shift, pale yellow is 1 pixel of shift or more">
         <span class="colorbar-label">Dot shift</span>
         <span class="tick">0</span><span class="colorbar-ramp"></span><span class="tick">1 px</span>
@@ -80,6 +84,7 @@
     </header>
     <div class="stage">
       <img id="thumb" alt="Shift map from the camera. Brightness shows how far the background dots moved; full brightness is 1 pixel." hidden>
+      <img id="piview" alt="Live camera view of the dot screen region from the Pi, with the shift map glowing where the dots moved and the region boxed: green clear, red gas." hidden>
       <div class="stage-empty" id="stage-empty">
         <p class="stage-empty-title" id="stage-empty-title">Connecting to the console</p>
         <p class="stage-empty-body" id="stage-empty-body"></p>

@@ -2,8 +2,10 @@
 """web_dashboard.py: the Mirage console in a browser.                         owner: Gio
 
 Shows the same data as dashboard.py, read the same way: the supervisor's telemetry JSON on
-UDP 5005 and the vision process's JPEG shift-map thumbnails on UDP 5006. It only listens; it
-never sends anything to the Pi. While it runs it owns UDP 5005 and 5006, so dashboard.py
+UDP 5005 and the vision process's JPEG shift-map thumbnails on UDP 5006. While the Pi is live,
+the image panel shows mirage_vision's own camera view of the dot screen region instead
+(http://<pi>:8080/region), and its "New reference frame" button is the one thing the console
+sends the Pi. While it runs it owns UDP 5005 and 5006, so dashboard.py
 (still the fallback) can't run at the same time, and the other way round.
 
   python mac/web_dashboard.py                  serves http://127.0.0.1:8750 and opens it
@@ -24,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,6 +52,7 @@ LIVE_GUARD_S = 5.0            # the simulator won't start within this long of re
 STREAM_PERIOD_S = 0.1         # each browser gets a snapshot 10 times a second
 MAX_STREAMS = 16
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+PI_VIEW_PORT = 8080                                  # mirage_vision -p: its browser view on the Pi
 
 
 def finite(obj):
@@ -249,8 +253,13 @@ STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/app.js": ("app.js", "text/javascript; charset=utf-8")}
 
 
-def make_server(console, sim, host, port, stop_event):
+def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT):
     streams = threading.BoundedSemaphore(MAX_STREAMS)
+
+    def pi_address(snap):
+        """The Pi sending live telemetry, or None: nothing yet, or it comes from this Mac."""
+        t = snap["telemetry"]
+        return t["latest_source"] if t["received"] and not t["simulated"] else None
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "MirageConsole/1"
@@ -275,6 +284,8 @@ def make_server(console, sim, host, port, stop_event):
             snap = console.snapshot(now)
             snap["sim"] = {"running": sim.running(), "pid": sim.pid(),
                            "blocked": console.sim_block_reason(now, sim.running())}
+            # mirage_vision's own web view on the Pi: the page shows its /region stream
+            snap["pi_view"] = {"host": pi_address(snap), "port": pi_view_port}
             return json.dumps(snap, allow_nan=False).encode()
 
         def do_GET(self):
@@ -332,6 +343,9 @@ def make_server(console, sim, host, port, stop_event):
             if length:
                 self.rfile.read(min(length, 4096))
             path = urlsplit(self.path).path
+            if path == "/api/reference":
+                self._new_reference()
+                return
             if path not in ("/api/sim/start", "/api/sim/stop"):
                 self._json(404, {"error": "not found"})
                 return
@@ -351,6 +365,24 @@ def make_server(console, sim, host, port, stop_event):
             else:
                 sim.stop()
             self._json(200, {"running": sim.running()})
+
+        def _new_reference(self):
+            """The one thing the console sends the Pi: ask mirage_vision for a new reference frame."""
+            if not self._control_allowed():
+                self._json(403, {"error": "A new reference frame can only be requested from this Mac."})
+                return
+            pi = pi_address(console.snapshot(time.monotonic()))
+            if not pi:
+                self._json(409, {"error": "No live telemetry from the Pi, so there's no Pi to ask."})
+                return
+            req = urllib.request.Request(f"http://{pi}:{pi_view_port}/reference", data=b"", method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    r.read()
+            except OSError as e:
+                self._json(502, {"error": f"mirage_vision on {pi}:{pi_view_port} didn't answer ({e})."})
+                return
+            self._json(200, {"pi": pi})
 
     return ThreadingHTTPServer((host, port), Handler)
 
@@ -385,6 +417,8 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="address to serve the page on (0.0.0.0 = all)")
     ap.add_argument("--port", type=int, default=8750)
     ap.add_argument("--no-browser", action="store_true", help="don't open the page automatically")
+    ap.add_argument("--pi-view-port", type=int, default=PI_VIEW_PORT,
+                    help="port of mirage_vision's browser view on the Pi (its -p)")
     args = ap.parse_args()
 
     tel_sock, img_sock = bind_udp(TEL_PORT), bind_udp(IMG_PORT)
@@ -392,7 +426,7 @@ def main():
     for sock, size, handler in ((tel_sock, TEL_BUF, console.on_telemetry), (img_sock, IMG_BUF, console.on_image)):
         threading.Thread(target=receive, args=(sock, size, handler, stop), daemon=True).start()
     try:
-        httpd = make_server(console, sim, args.host, args.port, stop)
+        httpd = make_server(console, sim, args.host, args.port, stop, args.pi_view_port)
     except OSError as e:
         raise SystemExit(f"Can't serve on {args.host}:{args.port} ({e.strerror}). Try --port {args.port + 1}.")
 

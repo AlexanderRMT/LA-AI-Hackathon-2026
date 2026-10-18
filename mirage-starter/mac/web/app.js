@@ -25,6 +25,7 @@
   let lastAnnounced = "";
   let cursorFromEnd = null;         // hovered or keyboard-selected history point, counted from the newest
   let thumbShown = 0, thumbWanted = 0, thumbBusy = false;
+  let piViewUrl = null, piViewOk = false;   // mirage_vision's camera view on the Pi, while it loads
 
   // ------------------------------------------------------------------ small helpers
   const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -418,13 +419,58 @@
     im.src = `/api/thumb.jpg?seq=${want}`;
   }
 
+  // While the Pi is live, show mirage_vision's own camera view of the dot screen region (an MJPEG
+  // stream straight from the Pi) instead of the shift-map thumbnail. If it can't be reached, fall
+  // back to the thumbnail and try again every few seconds.
+  function updatePiView(s) {
+    const pv = s && s.pi_view;
+    const url = pv && pv.host ? `http://${pv.host}:${pv.port}/region` : null;
+    if (url === piViewUrl) return;
+    piViewUrl = url;
+    const el = $("piview");
+    if (!url) {
+      piViewOk = false;
+      el.removeAttribute("src");
+      return;
+    }
+    piViewOk = true;
+    el.onerror = () => {
+      piViewOk = false;
+      queueRender();
+      setTimeout(() => {
+        if (piViewUrl !== url) return;
+        piViewOk = true;
+        el.src = `${url}?retry=${Date.now()}`;
+        queueRender();
+      }, 3000);
+    };
+    el.src = url;
+  }
+
+  function renderRefButton(link) {
+    const btn = $("ref-btn");
+    btn.hidden = !(isLocalPage && consoleUp && snap && snap.pi_view && snap.pi_view.host);
+  }
+
   function renderImage(s, link) {
+    updatePiView(s);
+    const piView = Boolean(piViewUrl && piViewOk);
+    $("piview").hidden = !piView;
+    setText($("view-title"), piView ? "Camera" : "Shift map");
     const img = s && s.image;
     const has = Boolean(img && img.seq > 0);
     if (has && img.seq !== thumbWanted && !paused) requestThumb(img.seq);
-    const visible = has && thumbShown > 0;
+    const visible = !piView && has && thumbShown > 0;
     $("thumb").hidden = !visible;
-    $("stage-empty").hidden = visible;
+    $("stage-empty").hidden = visible || piView;
+    if (piView) {
+      setText($("img-meta"), `dot screen region, live from ${s.pi_view.host}`);
+      $("tag-sim").hidden = true;
+      $("tag-stale").hidden = link.key !== "lost";
+      if (link.key === "lost") setText($("tag-stale"), "Not current");
+      $("tag-paused").hidden = true;
+      return;
+    }
     if (!visible) {
       const ip = (s && s.host_ips[0]) || "<this Mac’s IP>";
       if (!s) {
@@ -687,6 +733,7 @@
     renderTiming(link);
     renderBanners(link);
     renderSimButton(link);
+    renderRefButton(link);
     renderFooter();
     renderConnection(link);
     renderTitle(v, link);
@@ -741,6 +788,18 @@
     }
     btn.setAttribute("aria-busy", "true");
     await simulator(snap.sim.running ? "stop" : "start");
+    btn.removeAttribute("aria-busy");
+  });
+  $("ref-btn").addEventListener("click", async () => {
+    const btn = $("ref-btn");
+    btn.setAttribute("aria-busy", "true");
+    try {
+      const r = await fetch("/api/reference", { method: "POST", headers: { "X-Mirage-Control": "1" } });
+      const body = await r.json().catch(() => ({}));
+      note(r.ok ? `New reference frame taken on ${body.pi}.` : (body.error || `The console refused (${r.status}).`));
+    } catch {
+      note("The console didn’t answer.");
+    }
     btn.removeAttribute("aria-busy");
   });
   $("pause-btn").addEventListener("click", () => setPaused(!paused));

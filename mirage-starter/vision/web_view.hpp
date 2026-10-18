@@ -1,7 +1,8 @@
 // web_view.hpp: a browser view of what the vision process sees.               owner: Alex
 //
 // Serves http://<pi>:<port>/ with the camera frame, the shift map glowing over the dot screen
-// region, and the latest verdict and valve state. Rendering, JPEG encoding and the HTTP clients
+// region, and the latest verdict and valve state; /region streams just the region with a margin
+// around it (the Mac console shows that one). Rendering, JPEG encoding and the HTTP clients
 // all run on threads below the vision thread, so the view can stall but never delays a verdict.
 #pragma once
 

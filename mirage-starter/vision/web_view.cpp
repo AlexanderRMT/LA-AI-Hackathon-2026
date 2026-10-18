@@ -3,6 +3,7 @@
 // The HTTP side follows frame_stream.cpp: one MJPEG stream shared by every viewer.
 #include "web_view.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -34,8 +35,15 @@ const int kSendFlags = MSG_NOSIGNAL;
 const int kSendFlags = 0;
 #endif
 
-const int kViewWidth = 960;         // width of the served picture
+const int kViewWidth = 960;         // width of the whole-frame picture
+const int kRegionWidth = 800;       // width of the region picture
+const double kRegionMargin = 0.25;  // region picture: margin around the dot screen region, as a
+                                    // fraction of its longer side
 const int kBarHeight = 44;          // status bar under the picture
+
+// The two pictures served: the whole camera frame (/stream), and the dot screen region with a
+// margin of what's around it (/region). Each is rendered only while someone watches it.
+enum View { kFull = 0, kRegion = 1, kViews = 2 };
 const char* const kClassNames[] = {"clear", "gas", "heat", "motion"};
 const char* const kReasonNames[] = {"", "boot", "leak", "deadline"};
 
@@ -50,7 +58,8 @@ const char kIndexHtml[] =
     "</style></head><body>"
     "<img src=\"/stream\" alt=\"Live Mirage vision view\">"
     "<div>Mirage vision on QNX &middot; region box turns red on gas &middot; "
-    "<a href=\"/snapshot.jpg\" download=\"mirage.jpg\">save snapshot</a>"
+    "<a href=\"/snapshot.jpg\" download=\"mirage.jpg\">save snapshot</a> &middot; "
+    "<a href=\"/region\">region only</a>"
     "<button id=\"ref\" title=\"Clear the dot screen first: the next frame becomes the background\">"
     "New reference frame</button> <span id=\"msg\"></span></div>"
     "<script>"
@@ -65,7 +74,7 @@ struct State {
     int priority = 10;
     bool rotate = false;
     void (*onNewReference)() = nullptr;
-    std::atomic<int> viewers{0};
+    std::atomic<int> viewers[kViews]{};
 
     // Latest frame from the camera thread
     std::mutex frameMutex;
@@ -73,11 +82,11 @@ struct State {
     WebViewFrame frame;
     bool fresh = false;
 
-    // Latest JPEG, shared by every viewer
+    // Latest JPEG of each view, shared by everyone watching it
     std::mutex jpegMutex;
     std::condition_variable jpegCv;
-    std::shared_ptr<const std::vector<uchar>> jpeg;
-    uint64_t seq = 0;
+    std::shared_ptr<const std::vector<uchar>> jpeg[kViews];
+    uint64_t seq[kViews] = {};
 };
 
 State g;
@@ -91,17 +100,25 @@ void lowerPriority()
     pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
 }
 
-cv::Mat render(const WebViewFrame& f)
+cv::Mat render(const WebViewFrame& f, View view)
 {
-    const double scale = static_cast<double>(kViewWidth) / f.gray.cols;
+    // The part of the camera frame to show: all of it, or the region with a margin around it
+    const cv::Rect full(0, 0, f.gray.cols, f.gray.rows);
+    cv::Rect src = full;
+    if (view == kRegion && f.roi.area() > 0) {
+        const int m = cvRound(kRegionMargin * std::max(f.roi.width, f.roi.height));
+        src = cv::Rect(f.roi.x - m, f.roi.y - m, f.roi.width + 2 * m, f.roi.height + 2 * m) & full;
+    }
+    const int width = (view == kRegion) ? kRegionWidth : kViewWidth;
+    const double scale = static_cast<double>(width) / src.width;
     cv::Mat small, img;
-    cv::resize(f.gray, small, cv::Size(kViewWidth, cvRound(f.gray.rows * scale)), 0, 0, cv::INTER_AREA);
+    cv::resize(f.gray(src), small, cv::Size(width, cvRound(src.height * scale)), 0, 0, cv::INTER_AREA);
     cv::cvtColor(small, img, cv::COLOR_GRAY2BGR);
 
     const cv::Rect frameRect(0, 0, img.cols, img.rows);
     cv::Rect roi = frameRect;
     if (f.roi.area() > 0) {
-        roi = cv::Rect(cvRound(f.roi.x * scale), cvRound(f.roi.y * scale),
+        roi = cv::Rect(cvRound((f.roi.x - src.x) * scale), cvRound((f.roi.y - src.y) * scale),
                        cvRound(f.roi.width * scale), cvRound(f.roi.height * scale)) & frameRect;
     }
     if (!f.shiftMap.empty() && roi.area() > 0) {
@@ -132,8 +149,10 @@ cv::Mat render(const WebViewFrame& f)
     std::snprintf(text, sizeof text, "%s   p(gas) %.2f   peak %.2f px   %.0f ms/frame",
                   f.verdict.cls < 4 ? kClassNames[f.verdict.cls] : "?", f.verdict.p_gas,
                   f.verdict.peak_px, f.procMs);
-    cv::putText(out, text, cv::Point(400, img.rows + 28), cv::FONT_HERSHEY_SIMPLEX, 0.55,
-                gas ? cv::Scalar(80, 80, 255) : cv::Scalar(225, 232, 238), 1);
+    int baseline = 0;
+    const cv::Size textSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.55, 1, &baseline);
+    cv::putText(out, text, cv::Point(out.cols - textSize.width - 12, img.rows + 28), cv::FONT_HERSHEY_SIMPLEX,
+                0.55, gas ? cv::Scalar(80, 80, 255) : cv::Scalar(225, 232, 238), 1);
     return out;
 }
 
@@ -151,14 +170,19 @@ void renderLoop()
         if (f.gray.empty()) {
             continue;
         }
-        auto jpeg = std::make_shared<std::vector<uchar>>();
-        cv::imencode(".jpg", render(f), *jpeg, {cv::IMWRITE_JPEG_QUALITY, 75});
-        {
-            std::lock_guard<std::mutex> lock(g.jpegMutex);
-            g.jpeg = std::move(jpeg);
-            g.seq++;
+        for (int v = 0; v < kViews; v++) {
+            if (g.viewers[v].load() == 0) {
+                continue;
+            }
+            auto jpeg = std::make_shared<std::vector<uchar>>();
+            cv::imencode(".jpg", render(f, static_cast<View>(v)), *jpeg, {cv::IMWRITE_JPEG_QUALITY, 75});
+            {
+                std::lock_guard<std::mutex> lock(g.jpegMutex);
+                g.jpeg[v] = std::move(jpeg);
+                g.seq[v]++;
+            }
+            g.jpegCv.notify_all();
         }
-        g.jpegCv.notify_all();
     }
 }
 
@@ -224,24 +248,24 @@ std::string readRequestPath(int fd)
     return (post ? "POST " : "") + std::string(start, end);
 }
 
-// Waits for a JPEG newer than lastSeq. Returns nullptr on timeout.
-std::shared_ptr<const std::vector<uchar>> waitForJpeg(uint64_t& lastSeq, std::chrono::milliseconds timeout)
+// Waits for a JPEG of view v newer than lastSeq. Returns nullptr on timeout.
+std::shared_ptr<const std::vector<uchar>> waitForJpeg(View v, uint64_t& lastSeq, std::chrono::milliseconds timeout)
 {
     std::unique_lock<std::mutex> lock(g.jpegMutex);
-    if (!g.jpegCv.wait_for(lock, timeout, [&] { return g.seq != lastSeq; })) {
+    if (!g.jpegCv.wait_for(lock, timeout, [&] { return g.seq[v] != lastSeq; })) {
         return nullptr;
     }
-    lastSeq = g.seq;
-    return g.jpeg;
+    lastSeq = g.seq[v];
+    return g.jpeg[v];
 }
 
-uint64_t currentSeq()
+uint64_t currentSeq(View v)
 {
     std::lock_guard<std::mutex> lock(g.jpegMutex);
-    return g.seq;
+    return g.seq[v];
 }
 
-void streamMjpeg(int fd)
+void streamMjpeg(int fd, View v)
 {
     const char header[] =
         "HTTP/1.1 200 OK\r\n"
@@ -250,10 +274,10 @@ void streamMjpeg(int fd)
     if (!sendAll(fd, header, sizeof(header) - 1)) {
         return;
     }
-    g.viewers++;
-    uint64_t lastSeq = currentSeq();
+    g.viewers[v]++;
+    uint64_t lastSeq = currentSeq(v);
     for (;;) {
-        auto jpeg = waitForJpeg(lastSeq, std::chrono::milliseconds(1000));
+        auto jpeg = waitForJpeg(v, lastSeq, std::chrono::milliseconds(1000));
         if (jpeg == nullptr) {
             continue;   // vision is busy or stalled (the chaos demo); keep the viewer connected
         }
@@ -266,15 +290,15 @@ void streamMjpeg(int fd)
             break;   // viewer disconnected
         }
     }
-    g.viewers--;
+    g.viewers[v]--;
 }
 
-void sendSnapshot(int fd)
+void sendSnapshot(int fd, View v)
 {
-    g.viewers++;
-    uint64_t lastSeq = currentSeq();
-    auto jpeg = waitForJpeg(lastSeq, std::chrono::seconds(5));
-    g.viewers--;
+    g.viewers[v]++;
+    uint64_t lastSeq = currentSeq(v);
+    auto jpeg = waitForJpeg(v, lastSeq, std::chrono::seconds(5));
+    g.viewers[v]--;
     if (jpeg == nullptr) {
         const char msg[] = "No frame from the vision process\n";
         sendResponse(fd, "503 Service Unavailable", "text/plain", msg, sizeof(msg) - 1);
@@ -294,9 +318,13 @@ void serveClient(int fd)
     if (path == "/" || path == "/index.html") {
         sendResponse(fd, "200 OK", "text/html; charset=utf-8", kIndexHtml, sizeof(kIndexHtml) - 1);
     } else if (path == "/stream") {
-        streamMjpeg(fd);
+        streamMjpeg(fd, kFull);
+    } else if (path == "/region") {
+        streamMjpeg(fd, kRegion);
     } else if (path == "/snapshot.jpg") {
-        sendSnapshot(fd);
+        sendSnapshot(fd, kFull);
+    } else if (path == "/region.jpg") {
+        sendSnapshot(fd, kRegion);
     } else if (path == "POST /reference") {
         if (g.onNewReference) {
             g.onNewReference();
@@ -359,7 +387,7 @@ bool web_view_start(int port, int priority, bool rotate180, void (*onNewReferenc
 
 bool web_view_wanted()
 {
-    return g.viewers.load() > 0;
+    return g.viewers[kFull].load() + g.viewers[kRegion].load() > 0;
 }
 
 void web_view_publish(WebViewFrame& f)

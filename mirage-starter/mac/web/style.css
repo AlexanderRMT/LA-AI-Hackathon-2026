@@ -208,7 +208,8 @@ body[data-lost="1"] .layout { opacity: 0.5; }
   border-radius: var(--radius-sm);
   background: var(--well);
 }
-.stage img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* Pinned to the stage: a grid item's height: 100% doesn't resolve, so a tall image would overflow */
+.stage img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; }
 .stage-empty { max-width: 31rem; padding: 2rem; text-align: center; }
 .stage-empty-title { margin-bottom: 0.45rem; font-weight: 600; }
 .stage-empty-body { color: var(--ink-2); font-size: 0.95rem; line-height: 1.55; }
