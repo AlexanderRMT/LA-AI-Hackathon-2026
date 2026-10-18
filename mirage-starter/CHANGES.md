@@ -157,3 +157,11 @@ about 100,000,000. `train.py` warns per clip when they don’t.
 - Tested with the real engine on the Pi (synthetic dot-screen frames): a 0.3 px zoom went from
   brightness 50 everywhere to 0; a 0.25 px gas band from 43 to 67, and with a zoom on top from
   dimmer than its surroundings (28 vs 42) to 67 vs 0.
+
+## Web console: decluttered for showing to people (Alex)
+
+- Removed from the page: the Timing panel, the Run simulator button and the bottom status line.
+  The valve card still says "First gas frame to valve" after a trip. The simulator endpoints and
+  `fake_pi.py` are untouched, so rehearsals can still run `python mac/fake_pi.py` by hand; P and T
+  still pause and switch to the table. Light IBM Carbon styling (Gray 100 tokens, IBM Plex, square
+  corners) in the commit before.

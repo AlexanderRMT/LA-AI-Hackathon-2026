@@ -175,23 +175,6 @@
     setText($("link-meta"), link.meta);
   }
 
-  function renderSimButton(link) {
-    const btn = $("sim-btn");
-    const usable = isLocalPage && consoleUp && snap;
-    btn.hidden = !usable;
-    if (!usable) return;
-    const running = snap.sim.running;
-    setIcon(btn.querySelector("svg"), running ? "i-stop" : "i-play");
-    setText(btn.querySelector("span"), running ? "Stop simulator" : "Run simulator");
-    const blocked = !running && snap.sim.blocked;
-    if (blocked) {
-      btn.setAttribute("aria-disabled", "true");
-      btn.title = blocked;
-    } else {
-      btn.removeAttribute("aria-disabled");
-      btn.title = running ? "Stop fake_pi.py" : "Start fake_pi.py, sending to this Mac";
-    }
-  }
 
   function renderBanners(link) {
     const t = snap && snap.telemetry;
@@ -217,17 +200,6 @@
     $("banner-lost").hidden = !(link.key === "lost");
   }
 
-  function renderFooter() {
-    if (!snap) return;
-    const t = snap.telemetry, img = snap.image, c = snap.constants;
-    richText($("foot-host"), ["This Mac ", { code: snap.host_ips[0] || "offline" }]);
-    setText($("foot-ports"), `UDP ${snap.ports.telemetry} telemetry · ${snap.ports.image} images, owned by this console`);
-    const rejected = img.rejected ? ` · ${count(img.rejected)} unreadable images` : "";
-    setText($("foot-packets"), `${count(t.packets)} packets · ${count(t.malformed)} malformed · ${count(img.seq)} images${rejected}`);
-    const rules = `Rules from ${c.source}: trip after ${c.trip_run} gas verdicts · deadline ${c.deadline_ms} ms · reset after ${c.reset_clear} clear`;
-    setText($("foot-rules"), rules);
-    $("foot-rules").title = rules;
-  }
 
   function renderConnection(link) {
     if (!snap) return;
@@ -354,53 +326,6 @@
     setText($("verdict-meta"), parts.join(" · "));
   }
 
-  // ------------------------------------------------------------------ timing
-  function renderTiming(link) {
-    const t = snap && snap.telemetry;
-    const has = Boolean(t && t.received) && link.key !== "connecting";
-    const st = has ? t.state : {};
-    const c = snap ? snap.constants : { deadline_ms: 250 };
-    $("timing").classList.toggle("is-stale", has && link.key !== "live");
-    $("timing-tag").hidden = !(has && link.key !== "live");
-
-    const since = st.since_verdict_ms, sinceFill = $("since-fill");
-    if (!has || !isNum(since) || since < 0) {
-      setValue($("since-value"), "—");
-      setText($("since-sub"), !has ? "" : isNum(since) ? "no verdict yet" : "not reported");
-      sinceFill.style.width = "0";
-    } else {
-      setValue($("since-value"), since.toFixed(0), "ms");
-      setText($("since-sub"), `deadline ${c.deadline_ms} ms`);
-      sinceFill.style.width = `${clamp01(since / c.deadline_ms) * 100}%`;
-      sinceFill.classList.toggle("is-over", since > c.deadline_ms);
-    }
-
-    const lat = st.lat_ms, latMax = st.lat_max_ms;
-    if (has && isNum(lat) && lat > 0) {
-      setValue($("lat-value"), lat.toFixed(1), "ms");
-      setText($("lat-sub"), isNum(latMax) && latMax > 0 ? `max ${latMax.toFixed(1)} ms since start` : "");
-    } else {
-      setValue($("lat-value"), "—");
-      setText($("lat-sub"), has ? "not measured yet" : "");
-    }
-
-    if (has && isNum(t.lat_p99)) {
-      setValue($("p99-value"), t.lat_p99.toFixed(1), "ms");
-      setText($("p99-sub"), `over the last ${count(t.lat_count)} updates`);
-    } else {
-      setValue($("p99-value"), "—");
-      setText($("p99-sub"), has ? "no latency reported yet" : "");
-    }
-
-    const d2t = st.detect_to_trip_ms;
-    if (has && isNum(d2t) && d2t > 0) {
-      setValue($("d2t-value"), d2t.toFixed(0), "ms");
-      setText($("d2t-sub"), "most recent leak trip");
-    } else {
-      setValue($("d2t-value"), "—");
-      setText($("d2t-sub"), has ? "no leak trip since start" : "");
-    }
-  }
 
   // ------------------------------------------------------------------ shift map
   function requestThumb(seq) {
@@ -735,11 +660,8 @@
     const v = valveState(link);
     renderValve(v, link);
     renderVerdict(link);
-    renderTiming(link);
     renderBanners(link);
-    renderSimButton(link);
     renderRefButton(link);
-    renderFooter();
     renderConnection(link);
     renderTitle(v, link);
     announce(v, link);
@@ -773,28 +695,7 @@
     note.timer = setTimeout(() => { el.textContent = ""; }, 6000);
   }
 
-  async function simulator(action) {
-    try {
-      const r = await fetch(`/api/sim/${action}`, { method: "POST", headers: { "X-Mirage-Control": "1" } });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) note(body.error || `The console refused (${r.status}).`);
-      else note(action === "start" ? "Simulator running: fake_pi.py is sending to this Mac." : "Simulator stopped.");
-    } catch {
-      note("The console didn’t answer.");
-    }
-  }
 
-  $("sim-btn").addEventListener("click", async () => {
-    const btn = $("sim-btn");
-    if (!snap) return;
-    if (btn.getAttribute("aria-disabled") === "true") {
-      note(snap.sim.blocked || "The simulator can’t start right now.");
-      return;
-    }
-    btn.setAttribute("aria-busy", "true");
-    await simulator(snap.sim.running ? "stop" : "start");
-    btn.removeAttribute("aria-busy");
-  });
   async function piButton(id, path, okText) {
     const btn = $(id);
     btn.setAttribute("aria-busy", "true");

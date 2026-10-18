@@ -49,9 +49,6 @@
   </div>
   <div class="topbar-actions">
     <span class="note" id="sim-note" role="status"></span>
-    <button class="btn" id="sim-btn" type="button" hidden>
-      <svg class="icon icon-fill" aria-hidden="true"><use href="#i-play"/></svg><span>Run simulator</span>
-    </button>
   </div>
 </header>
 
@@ -186,37 +183,6 @@
       </div>
     </section>
 
-    <section class="panel timing" id="timing" aria-labelledby="timing-title">
-      <header class="panel-head">
-        <h2 id="timing-title">Timing</h2>
-        <span class="meta">measured on the Pi</span>
-        <span class="tag" data-tone="warn" id="timing-tag" hidden>Last reported</span>
-      </header>
-      <div class="stats">
-        <div class="stat">
-          <span class="label">Since last verdict</span>
-          <span class="value" id="since-value">—</span>
-          <span class="bar" aria-hidden="true"><span id="since-fill"></span></span>
-          <span class="sub" id="since-sub"></span>
-        </div>
-        <div class="stat">
-          <span class="label">Frame to supervisor</span>
-          <span class="value" id="lat-value">—</span>
-          <span class="sub" id="lat-sub"></span>
-        </div>
-        <div class="stat">
-          <span class="label">Latency p99</span>
-          <span class="value" id="p99-value">—</span>
-          <span class="sub" id="p99-sub"></span>
-        </div>
-        <div class="stat">
-          <span class="label">First gas frame to valve</span>
-          <span class="value" id="d2t-value">—</span>
-          <span class="sub" id="d2t-sub"></span>
-        </div>
-      </div>
-    </section>
-
     <section class="panel link-panel" id="link-panel" aria-labelledby="link-title">
       <header class="panel-head">
         <h2 id="link-title">Connection</h2>
@@ -231,14 +197,6 @@
   </div>
 </main>
 
-<footer class="statusline">
-  <span id="foot-host"></span>
-  <span id="foot-ports"></span>
-  <span id="foot-packets"></span>
-  <span class="grow"></span>
-  <span id="foot-rules"></span>
-  <span class="keys"><kbd>P</kbd> pause <kbd>T</kbd> table</span>
-</footer>
 
 <div class="sr-only" id="announcer" aria-live="assertive"></div>
 <script src="/app.js"></script>

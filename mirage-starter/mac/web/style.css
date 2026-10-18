@@ -189,7 +189,7 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .value small { margin-left: 0.2em; color: var(--ink-2); font-size: 0.6em; font-weight: 500; letter-spacing: 0; }
 .value-sm { font-size: 1.25rem; }
 .caption { color: var(--ink-3); font-size: 0.85rem; line-height: 1.45; }
-.is-stale .value, .is-stale .class-name, .is-stale .class-icon, .is-stale .meter, .is-stale .bar { opacity: 0.45; }
+.is-stale .value, .is-stale .class-name, .is-stale .class-icon, .is-stale .meter { opacity: 0.45; }
 
 /* ---------------------------------------------------------------- shift map */
 .view { display: flex; flex-direction: column; min-height: 0; }
@@ -270,20 +270,7 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .meter-fill.is-gas { background: var(--alarm); }
 .meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
 
-/* ---------------------------------------------------------------- timing */
-.stats {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-  overflow: hidden;
-  border-top: 1px solid var(--line);
-  border-radius: 0 0 var(--radius) var(--radius);
-  background: var(--line);
-}
-.stat { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; padding: 0.8rem 1rem 0.9rem; background: var(--panel); }
-.stat .value { font-size: 1.4rem; }
 .sub { overflow: hidden; color: var(--ink-3); font-size: 0.84rem; white-space: nowrap; text-overflow: ellipsis; }
-.bar { display: block; height: 3px; margin: 0.25rem 0 0.1rem; overflow: hidden; border-radius: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.bar span { display: block; width: 0; height: 100%; background: var(--accent); }
-.bar span.is-over { background: var(--alarm); }
 
 /* ---------------------------------------------------------------- history */
 .history { display: flex; flex-direction: column; }
@@ -336,29 +323,6 @@ td { border-bottom: 1px solid #181b20; }
 th:first-child, td:first-child { text-align: left; }
 td .key { margin-right: 0.45rem; vertical-align: middle; }
 
-/* ---------------------------------------------------------------- status line */
-.statusline {
-  flex: none;
-  display: flex; align-items: center; gap: 1.4rem;
-  min-height: 2.35rem; padding: 0 1.25rem;
-  overflow: hidden;
-  border-top: 1px solid var(--line);
-  color: var(--ink-3); font-size: 0.85rem; white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.statusline .grow { flex: 1; }
-#foot-rules { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.statusline > span:not(#foot-rules):not(.grow) { flex: none; }
-.statusline b { color: var(--ink-2); font-weight: 500; }
-.keys { display: inline-flex; align-items: center; gap: 0.35rem; }
-kbd {
-  min-width: 1.35rem; padding: 0.05rem 0.35rem;
-  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 0;
-  background: var(--raised); color: var(--ink-2);
-  font: 500 0.78rem var(--mono); text-align: center;
-}
-.keys kbd + kbd { margin-left: 0.6rem; }
-
 /* ---------------------------------------------------------------- smaller screens */
 @media (max-width: 1100px) {
   body { height: auto; min-height: 100%; }
@@ -370,12 +334,10 @@ kbd {
   }
   .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); align-items: start; }
   .stage { flex: none; aspect-ratio: 16 / 9; min-height: 0; }
-  .statusline { flex-wrap: wrap; gap: 0.4rem 1.2rem; padding: 0.5rem 1.25rem; white-space: normal; }
-  .statusline .grow { display: none; }
 }
 @media (max-width: 640px) {
   .topbar { flex-wrap: wrap; gap: 0.5rem 1rem; height: auto; padding: 0.6rem 1rem; }
-  .brand-sub, .keys { display: none; }
+  .brand-sub { display: none; }
   .banner { flex-wrap: wrap; }
   .layout { padding: 0.75rem; gap: 0.75rem; }
   .colorbar { margin-left: 0; }
@@ -385,6 +347,6 @@ kbd {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 @media (forced-colors: active) {
-  .valve::before, .meter-fill, .bar span, .key, .link-shape, .tag::before, #chart .strip-open, #chart .strip-closed { forced-color-adjust: none; }
+  .valve::before, .meter-fill, .key, .link-shape, .tag::before, #chart .strip-open, #chart .strip-closed { forced-color-adjust: none; }
   .panel, .btn, .tag { border-color: CanvasText; }
 }
