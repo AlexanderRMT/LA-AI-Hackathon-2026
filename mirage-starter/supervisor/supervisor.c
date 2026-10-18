@@ -43,7 +43,7 @@
 #define PIN_BUZZER      23      /* (16) active buzzer */
 #define PIN_BUTTON      24      /* (18) reset button */
 #define RELAY_ACTIVE_HIGH    1   /* 0 if your relay module switches on with a LOW input */
-#define BUTTON_PRESSED_CHAR '0'  /* module pulls up, so pressed reads 0; flip if yours differs */
+#define BUTTON_PRESSED_LEVEL 0   /* pin is pulled up, so pressed reads 0; flip if your module drives high */
 
 static uint64_t now_ns(void)
 {
@@ -53,12 +53,12 @@ static uint64_t now_ns(void)
 }
 
 /* ------------------------------------------------------------------ GPIO */
-/* Uses the rpi_gpio resource manager: messages to /dev/gpio/msg for outputs,
- * the text file /dev/gpio/<n> for the button. Check `ls /dev/gpio` on the Pi. */
-
-static int gpio_fd = -1;
+/* Uses the rpi_gpio resource manager: messages to /dev/gpio/msg for the outputs
+ * and the button. Check `ls /dev/gpio` on the Pi. */
 
 #ifndef NO_GPIO
+static int gpio_fd = -1;
+
 static int gpio_msg(unsigned subtype, unsigned gpio, unsigned value)
 {
     rpi_gpio_msg_t msg;
@@ -86,9 +86,11 @@ static void gpio_setup(void)
             perror("[supervisor] set GPIO as output");
         }
     }
-#ifdef RPI_GPIO_FUNC_IN
-    gpio_msg(RPI_GPIO_SET_SELECT, PIN_BUTTON, RPI_GPIO_FUNC_IN);
-#endif
+    /* Pull-up so an unwired or loose button reads as released, never as a press */
+    if (gpio_msg(RPI_GPIO_SET_SELECT, PIN_BUTTON, RPI_GPIO_FUNC_IN) == -1 ||
+        gpio_msg(RPI_GPIO_PUD, PIN_BUTTON, RPI_GPIO_PUD_UP) == -1) {
+        perror("[supervisor] set button GPIO as input");
+    }
 #else
     fprintf(stderr, "[supervisor] built with NO_GPIO, outputs are printed only\n");
 #endif
@@ -117,16 +119,19 @@ static void gpio_set(unsigned gpio, int level)
 static int button_down(void)
 {
 #ifndef NO_GPIO
-    char path[32];
-    char c = 0;
-    snprintf(path, sizeof path, "/dev/gpio/%d", PIN_BUTTON);
-    int fd = open(path, O_RDONLY);
-    if (fd == -1) {
+    if (gpio_fd == -1) {
         return 0;
     }
-    ssize_t n = read(fd, &c, 1);
-    close(fd);
-    return n == 1 && c == BUTTON_PRESSED_CHAR;
+    rpi_gpio_msg_t msg;
+    memset(&msg, 0, sizeof msg);
+    msg.hdr.type = _IO_MSG;
+    msg.hdr.subtype = RPI_GPIO_READ;
+    msg.hdr.mgrid = RPI_GPIO_IOMGR;
+    msg.gpio = PIN_BUTTON;
+    if (MsgSend(gpio_fd, &msg, sizeof msg, &msg, sizeof msg) == -1) {
+        return 0;
+    }
+    return msg.value == BUTTON_PRESSED_LEVEL;
 #else
     return 0;
 #endif
@@ -293,7 +298,7 @@ static void *telemetry(void *arg)
             sock = -1;
         }
     }
-    int was_down = 0;
+    int was_down = 1;                       /* a press only counts after a release has been seen */
     unsigned n = 0;
     for (;;) {
         usleep(50 * 1000);

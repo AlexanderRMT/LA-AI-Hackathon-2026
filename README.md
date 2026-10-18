@@ -91,8 +91,9 @@ qcc -Vgcc_ntox86_64 -O2 -o mock_vision supervisor/mock_vision.c
 ./supervisor &          # boots CLOSED
 ./mock_vision           # c clear, g gas, s stall, x reset
 ```
-Then for the Pi (run as root; if `<sys/rpi_gpio.h>` is missing on the host, copy it from the
-QNX hardware samples repo’s `common/` folder):
+Then for the Pi (run as root, e.g. with `sudo`; if `<sys/rpi_gpio.h>` is missing on the host, copy
+`common/system/gpio/sys/rpi_gpio.h` from https://gitlab.com/qnx/projects/hardware-component-samples
+into `$QNX_TARGET/usr/include/sys/`; it is QNX-licensed, so don't commit it here):
 ```sh
 qcc -Vgcc_ntoaarch64le -O2 -o supervisor supervisor/supervisor.c -lsocket
 qcc -Vgcc_ntoaarch64le -O2 -o mirage_ctl tools/mirage_ctl.c
