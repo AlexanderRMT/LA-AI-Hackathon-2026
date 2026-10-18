@@ -406,7 +406,7 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT,
             except urllib.error.HTTPError as e:            # the Pi answered, with a refusal
                 return pi, e.code, e.read().decode(errors="replace").strip()
             except OSError as e:
-                self._json(502, {"error": f"mirage_vision on {pi}:{pi_view_port} didn't answer ({e})."})
+                self._json(502, {"error": "mirage_vision on the Pi didn't answer."})
                 return None
 
         def _new_reference(self):
@@ -415,9 +415,9 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT,
             if answer:
                 pi, status, _ = answer
                 if status == 200:
-                    self._json(200, {"pi": pi})
+                    self._json(200, {"ok": True})
                 else:
-                    self._json(502, {"error": f"mirage_vision on {pi} refused ({status})."})
+                    self._json(502, {"error": f"mirage_vision on the Pi refused ({status})."})
 
         def _reset_valve(self):
             """Ask the supervisor, through mirage_vision, to reopen the valve. Its rules decide."""
@@ -425,13 +425,13 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT,
             if answer:
                 pi, status, body = answer
                 if body == "accepted":
-                    self._json(200, {"pi": pi, "result": "accepted"})
+                    self._json(200, {"result": "accepted"})
                 elif body == "refused":
-                    self._json(409, {"pi": pi, "result": "refused",
+                    self._json(409, {"result": "refused",
                                      "error": "The supervisor refused: gas is still in view, or vision isn't sending."})
                 else:
-                    self._json(502, {"pi": pi, "result": body or str(status),
-                                     "error": f"The supervisor on {pi} isn't reachable from mirage_vision."})
+                    self._json(502, {"result": body or str(status),
+                                     "error": "The supervisor on the Pi isn't reachable from mirage_vision."})
 
     return ThreadingHTTPServer((host, port), Handler)
 

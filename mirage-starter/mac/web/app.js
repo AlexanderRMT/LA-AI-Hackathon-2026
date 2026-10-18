@@ -116,7 +116,7 @@
       return { key: down ? "down" : "stale", label: down ? "No telemetry" : "Telemetry interrupted",
                meta: `last packet ${duration(t.age_s)} ago` };
     }
-    const from = t.simulated ? "simulator on this Mac" : `from ${t.latest_source}`;
+    const from = t.simulated ? "simulator on this Mac" : "from the Pi";
     return { key: "live", label: "Live", meta: `${fixed(t.rate_hz, 1)} updates/s · ${from}` };
   }
 
@@ -191,11 +191,9 @@
     const multi = live && t.multi_source;
     $("banner-multi").hidden = !multi;
     if (multi) {
-      const names = t.sources.filter((s) => s.active).map((s) => `${s.addr}:${s.port}${s.local ? " (this Mac)" : ""}`);
-      const n = names.length;
-      const who = n === 2 ? `${names[0]} and ${names[1]} are both` : `${names.slice(0, -1).join(", ")} and ${names[n - 1]} are all`;
+      const n = t.sources.filter((s) => s.active).length;
       setText($("banner-multi-title"), `${n === 2 ? "Two" : n === 3 ? "Three" : n} senders`);
-      setText($("banner-multi-text"), `${who} sending to UDP ${snap.ports.telemetry}. Their packets interleave, so the readings jump between them. Keep only one.`);
+      setText($("banner-multi-text"), `${n === 2 ? "Two devices are both" : `${n} devices are all`} sending to UDP ${snap.ports.telemetry}. Their packets interleave, so the readings jump between them. Keep only one.`);
     }
     $("banner-lost").hidden = !(link.key === "lost");
   }
@@ -218,13 +216,14 @@
       } else {
         const box = document.createElement("span");
         box.className = "senders";
-        for (const s of active) {
+        active.forEach((s, i) => {
           const row = document.createElement("span");
           const note = document.createElement("small");
-          note.textContent = ` ${s.local ? "this Mac · " : ""}${count(s.packets)} packets`;
-          row.append(document.createTextNode(s.addr), note);
+          note.textContent = ` ${count(s.packets)} packets`;
+          const name = s.local ? "This computer" : active.length === 1 ? "The Pi" : `Sender ${i + 1}`;
+          row.append(document.createTextNode(name), note);
           box.append(row);
-        }
+        });
         list.replaceChildren(box);
       }
     }
@@ -394,7 +393,7 @@
     $("thumb").hidden = !visible;
     $("stage-empty").hidden = visible || piView;
     if (piView) {
-      setText($("img-meta"), `dot screen region, live from ${s.pi_view.host}`);
+      setText($("img-meta"), "dot screen region, live from the Pi");
       $("tag-sim").hidden = true;
       $("tag-stale").hidden = link.key !== "lost";
       if (link.key === "lost") setText($("tag-stale"), "Not current");
@@ -402,7 +401,7 @@
       return;
     }
     if (!visible) {
-      const ip = (s && s.host_ips[0]) || "<this Mac’s IP>";
+      const ip = "<this computer’s IP>";
       if (!s) {
         setText($("stage-empty-title"), "Connecting to the console");
         richText($("stage-empty-body"), []);
@@ -416,7 +415,7 @@
           String(s.ports.image), " when it runs with ", { code: `-i ${ip}` }, "."]);
       }
     }
-    setText($("img-meta"), has ? `${img.width} × ${img.height} px · from ${img.simulated ? "this Mac" : img.source}` : "");
+    setText($("img-meta"), has ? `${img.width} × ${img.height} px · from ${img.simulated ? "this Mac" : "the Pi"}` : "");
     $("tag-sim").hidden = !(visible && img.simulated);
     const staleImg = visible && (link.key === "lost" || (isNum(img.age_s) && img.age_s > s.constants.stale_s));
     $("tag-stale").hidden = !staleImg;
@@ -710,7 +709,7 @@
   }
 
   $("ref-btn").addEventListener("click", () =>
-    piButton("ref-btn", "/api/reference", (b) => `New reference frame taken on ${b.pi}.`));
+    piButton("ref-btn", "/api/reference", () => "New reference frame taken."));
   $("open-btn").addEventListener("click", () =>
     piButton("open-btn", "/api/reset", () => "Valve open: the supervisor accepted the reset."));
   $("pause-btn").addEventListener("click", () => setPaused(!paused));
