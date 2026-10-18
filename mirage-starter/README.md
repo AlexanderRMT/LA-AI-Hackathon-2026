@@ -11,7 +11,7 @@ https://claude.ai/artifact/Lzb7oH76Uhe4io8HfREiKL
  (a laptop)     │   BOS engine: DIS flow, bump removal, 64×64 field → TFLite model         │
                 │        │ one verdict every 100 ms over QNX message passing                │
                 │        ▼                                                                  │
-                │   supervisor (priority 50, SCHED_FIFO) → valve LED (stands in for valve) │
+                │   supervisor (priority 50, SCHED_FIFO) → LED panel (stands in for valve) │
                 │        status LEDs; buzzer and reset button optional                      │
                 └────────┬──────────────────────────────────────────────────────────────────┘
                          │ UDP 5005 telemetry (JSON), UDP 5006 shift-map thumbnails (JPEG)
@@ -58,8 +58,8 @@ when you start.
 |-----------------|---------------------------------------------|---------------------------------------------|-------------------------------------------|
 | Hour 0 to 1     | Boot QNX, clone `qnx/QNX-AI-workshop`, camera running | Supervisor + mock_vision on the VM           | Kill test in `bos_proto.py`; get props    |
 | **Checkpoint 1**| All three report: frames on the Pi, IPC working, plume visible on the Mac |  |  |
-| Hour 1 to 3     | `mirage_vision` on Alex’s camera code, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the three LEDs; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
-| **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → valve LED goes off |  |  |
+| Hour 1 to 3     | `mirage_vision` on Alex’s camera code, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the six-LED panel; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
+| **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → green valve LED goes off, red leak LED on |  |  |
 | Hour 3 to 4     | Recording session, all three, on the final rig (protocol below) |  |  |
 | Hour 4 to 7     | Load model v1, measure CPU time per frame   | Latency logging, run_mirage.sh, false-trip runs | Train v1, then v2 on Pi dumps; dashboard polish |
 | **Checkpoint 3**| Model in the loop, dashboard live           |                                             |                                           |
@@ -134,17 +134,26 @@ TFLite.
 
 ## Wiring (BCM GPIO numbers, physical pins in parentheses)
 
-The demo uses LEDs only. We can't put a real valve on lighter gas, so a "valve" LED on GPIO17
-stands in for a normally-closed solenoid valve: lit means open, and in a real install that pin
-would drive a relay that cuts the gas line.
+The demo uses a six-LED panel. We can't put a real valve on lighter gas, so the green "valve
+open" LED stands in for a normally-closed solenoid valve; in a real install GPIO17 drives a relay
+that cuts the gas line (it's still driven, so a relay can be added without code changes).
 
-| Part              | Connection                                                              |
+| Row                 | LED    | GPIO (pin) | Lit means                                                          |
+|---------------------|--------|------------|--------------------------------------------------------------------|
+| 1: gas and valve    | Green  | 21 (40)    | Valve open                                                         |
+|                     | Red    | 20 (38)    | Tripped on a leak                                                  |
+|                     | Yellow | 16 (36)    | The latest verdict is gas (lights before the 3-in-a-row trip)      |
+| 2: system health    | Green  | 13 (33)    | Blinks while vision's verdicts arrive in time; dark if it stalls or dies |
+|                     | Yellow | 19 (35)    | Tripped, and a reset would be accepted now                         |
+|                     | Red    | 26 (37)    | Tripped because vision went silent, or still in the boot lockout   |
+
+Each LED through a 220 to 330 Ω resistor to GND (pins 34 and 39 are next to the rows).
+
+| Optional part     | Connection                                                              |
 |-------------------|-------------------------------------------------------------------------|
-| Valve LED         | GPIO17 (11) through a resistor (220 to 330 Ω) to GND (9). Lit = valve open |
-| Green LED, open   | GPIO27 (13) through a resistor to GND (14)                              |
-| Red LED, tripped  | GPIO22 (15) through a resistor to GND (20)                              |
-| Buzzer (optional) | Signal GPIO23 (16), VCC 3.3 V (17), GND (25). Unused without one         |
-| Button (optional) | GPIO24 (18) to GND (39) through the button. The supervisor enables the pull-up, so leaving it unwired is safe |
+| Relay module      | IN to GPIO17 (11), VCC 5 V (2), GND (6). Energized = valve open          |
+| Buzzer            | Signal GPIO23 (16), VCC 3.3 V (17), GND (25). Sounds 1.5 s on a trip     |
+| Button            | GPIO24 (18) to GND (39) through the button. The supervisor enables the pull-up, so leaving it unwired is safe |
 
 LED long leg (anode) to the GPIO pin, short leg through the resistor to GND. Without a button,
 reset from SSH with `./mirage_ctl reset`. If you later add a relay module and it switches on
@@ -153,11 +162,11 @@ because then a dead Pi can never hold the valve open.
 
 ## The chaos demo (about 60 s at the table)
 
-1. Valve LED and green LED on, dashboard green.
-2. Puff the lighter. The valve trips (valve LED off, red LED on); the dashboard shows
-   “first gas frame to valve” in ms.
+1. Green "valve open" and the blinking green "vision alive" on, dashboard green.
+2. Puff the lighter. Yellow "gas" lights, then the valve trips (green off, red "leak" on); the
+   dashboard shows “first gas frame to valve” in ms.
 3. Run `./mirage_ctl reset` (or press the button, if wired) while gas is still there: refused.
-   Again once it clears: accepted.
+   Once it clears, yellow "reset ready" lights; reset again: accepted.
 4. `./cpu_hog 15 4 10`: nothing happens, because vision outranks the hog.
 5. `./cpu_hog 30 4 10`: vision starves, the supervisor fails closed within 250 ms. Your SSH session
    freezes for those 10 s; that’s expected.

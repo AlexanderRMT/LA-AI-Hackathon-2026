@@ -1,194 +1,130 @@
-# Mirage starter kit
+# Mirage: seeing gas leaks with a camera
 
-Mirage sees gas leaks with a camera and a dot screen (background-oriented schlieren), classifies
-the plume with a TFLite model on a Raspberry Pi 5 running QNX, and lets a top-priority supervisor
-close a normally-closed valve. Explainer and live simulation:
-https://claude.ai/artifact/Lzb7oH76Uhe4io8HfREiKL
+**Mirage spots an invisible gas leak on camera and shuts the valve in about a second.** It runs on a
+Raspberry Pi 5 with the QNX real-time OS. A safety supervisor keeps the valve closed whenever it can't
+confirm the air is clear.
+
+Built in a weekend at LA Hacks 2026 by Jaime Rebollar, Alexander Magdaleno and Giovanni Rodriguez.
+
+## Inspiration
+
+Gas leaks are invisible. The 2015 Aliso Canyon blowout leaked methane for four months. Smaller leaks
+in homes, gas lines and substations (SF6 in switchgear) go unnoticed until someone smells them, or
+until something ignites. Point gas sensors only alarm once gas reaches them, and optical gas imaging
+cameras cost tens of thousands of dollars.
+
+Gas bends light slightly differently from air. Labs photograph airflow with a technique called
+**background-oriented schlieren (BOS)**: put a random dot pattern behind the air you're watching, and
+anything that bends light makes the dots appear to shift by a fraction of a pixel. We wanted to know
+whether a $25 camera, a laptop screen showing dots, and a Raspberry Pi could do the same thing in
+real time, and whether we could make it safe enough to control a valve.
+
+## What it does
+
+1. A **dot screen** sits behind the area being watched. The **Pi camera** watches it.
+2. **Vision** compares each frame with a reference frame and measures how far every part of the dot
+   pattern has shifted. A plume of gas shows up as a patch of sub-pixel shifts.
+3. A small **TensorFlow Lite model** reads the last 0.4 s of that shift field and classifies it as
+   *clear*, *gas*, *heat* (hot air from a mug or a soldering iron) or *motion* (people, hands, bumps).
+4. A **safety supervisor** gets a verdict 10 times a second. After 3 gas verdicts in a row it
+   **closes the valve**. If vision stalls, crashes or is starved of CPU for 250 ms, it **fails
+   closed**. It only lets a person reopen the valve once it has seen 5 clear verdicts in a row.
+5. A **six-LED panel** on the Pi and a **live web dashboard** show what's happening: the camera
+   with the gas glowing over the dots, the valve state, the latest verdict and a gas-probability chart.
+
+## How we built it
 
 ```
-                ┌───────────────────────── Raspberry Pi 5, QNX 8 ──────────────────────────┐
- dot screen ──▶ │ Camera Module 3 → Sensor Framework → mirage_vision (priority 20)         │
- (a laptop)     │   BOS engine: DIS flow, bump removal, 64×64 field → TFLite model         │
-                │        │ one verdict every 100 ms over QNX message passing                │
-                │        ▼                                                                  │
-                │   supervisor (priority 50, SCHED_FIFO) → LED panel (stands in for valve) │
-                │        status LEDs; buzzer and reset button optional                      │
-                └────────┬──────────────────────────────────────────────────────────────────┘
-                         │ UDP 5005 telemetry (JSON), UDP 5006 shift-map thumbnails (JPEG)
-                         ▼
-                   Gio’s Mac: mac/dashboard.py
+ dot screen ──▶ Pi Camera Module 3 ──▶ mirage_vision (QNX, priority 20)
+                                        DIS optical flow → bump removal → 64×64 shift field → TFLite
+                                               │ verdict every 100 ms (QNX message passing)
+                                               ▼
+                                        supervisor (QNX, priority 50, SCHED_FIFO)
+                                               ├─▶ valve (relay / valve LED) + six-LED panel
+                                               └─▶ telemetry over UDP ──▶ web dashboard
 ```
 
-## Who owns what
+- **QNX 8 on a Raspberry Pi 5.** The camera comes in through QNX's Sensor Framework. The vision
+  process and the safety supervisor are separate processes with fixed priorities. The supervisor's
+  deadline check runs on its own priority-50 timer, so a stalled or killed vision process can't keep
+  the valve open.
+- **Vision (C++, OpenCV, TensorFlow Lite).** DIS optical flow on the dot-screen region, median
+  subtraction to remove whole-image bumps, then a 64×64 field into the model. About 55 ms per frame
+  on the Pi, at a steady 10 verdicts per second.
+- **Model.** Trained on recordings made on the final rig: lighter presses, hot mugs, soldering iron,
+  hands waving, people walking past, table taps. It uses only basic TFLite ops, so it runs on the
+  Pi's TFLite build.
+- **Supervisor (C).** About 450 lines with no dynamic allocation. Drives the valve output and LEDs
+  through QNX's GPIO resource manager.
+- **Dashboard.** Python plus a web page: the Pi's live camera view, the valve, the latest verdict
+  and history, with *New reference frame* and *Open valve* buttons. Opening the valve still goes
+  through the supervisor's rules.
 
-|                | Jaime (QNX)                                   | Alex (QNX)                                         | Gio (Mac)                                         |
-|----------------|-----------------------------------------------|----------------------------------------------------|---------------------------------------------------|
-| Builds         | `vision/`: camera → BOS → model → verdicts    | `supervisor/`, `tools/`, wiring, the rigid rig     | `mac/`: physics proof, data, model, dashboard     |
-| First hour     | QNX booted on the Pi, workshop camera demo running with the Camera Module 3 | Supervisor and mock_vision talking on a QNX VM (NO_GPIO build) | A lighter plume showing up in `bos_proto.py` on the Mac camera |
-| Hands off      | Field dumps to Gio, verdicts to the supervisor | Telemetry to Gio, valve state to everyone          | `model.tflite` to Jaime                           |
-| Also owns      | ROI and camera settings                       | Chaos demo, latency numbers                        | Devpost, demo video, props, the dot-screen device |
-| Pitch section  | The physics and the founder story             | Why QNX, and the live chaos demo                   | The AI, the data, and the impact                  |
+## Results
 
-Gio doesn’t need SDP. Everything in `mac/` runs on macOS. If he needs the Pi, he can SSH in
-(`ssh qnxuser@qnxpi.local`) and build on the target, since the current QNX images ship a self-hosted
-developer desktop.
+Measured on the rig, with the model scoring recordings it wasn't trained on:
 
-## The contracts (change these only with all three of you)
+| | |
+|---|---|
+| Lighter presses that closed the valve | **47 of 50** |
+| Time from press to valve closed (median) | **1.0 s** |
+| False trips on clear, heat and motion clips | **2**, both from one hand-waving clip |
+| Hot mug, table taps, empty scene | **0** false trips |
+| Camera frame to supervisor (99th percentile) | **about 55 ms** |
+| Vision silent → valve closed | **≤ 250 ms** |
 
-1. **Verdicts:** `common/mirage_msgs.h`. The vision process sends `mirage_verdict_t` with
-   `MsgSend()` to the name `mirage_supervisor` and gets `mirage_status_t` back.
-2. **Model:** input `float32 [1, 64, 64, 8]`, which is (dx, dy) for the last 4 fields, oldest first,
-   clipped to ±4 px and multiplied by 0.5. Output `float32 [1, 4]` softmax over
-   `clear, gas, heat, motion`. Fields are processed at 10 Hz.
-3. **Processing constants:** DIS optical flow `PRESET_MEDIUM`, median bump removal, `INTER_AREA`
-   resize to 64×64, EMA 0.5. They live in `BosParams` (C++) and at the top of `mac/*.py`.
-4. **Training data:** Pi dumps are folders named after the label (`gas_lighter_01/`) holding
-   `fields.f32` (N×64×64×2 float32) and `meta.csv` (`idx,frame_ns,peak_px,bump_px`).
-   Mac recordings are `.npz` files from `bos_proto.py`.
-5. **Telemetry:** the supervisor sends JSON to `<mac ip>:5005` at 10 Hz. The vision hook sends
-   JPEG thumbnails to `<mac ip>:5006`.
-6. **Pins:** listed under Wiring below.
+**The chaos demo:** load the CPU with a lower-priority process and nothing happens, because vision
+outranks it. Load it above vision and the supervisor fails closed within 250 ms. Kill vision and the
+valve closes and stays closed until a person reopens it.
 
-## Plan and checkpoints
+## Challenges
 
-Work backward from the official “hacking ends” time on live.lahacks.com. Hours below count from
-when you start.
+- **Sub-pixel signals.** A butane plume shifts the dots by only 0.2 to 0.5 px. Every bump to the table,
+  change in light or sleeping laptop screen is larger than that, so the reference frame and a rigid
+  rig matter as much as the code.
+- **Gas versus everything else.** A simple "big shift means gas" rule also fires on hands, hot mugs
+  and bumps. The model, trained on labeled press timing and synthetic table taps, is what separates them.
+- **Real-time plumbing.** We fixed the reset button never registering, region crops crashing the
+  optical flow, and shift-map images that never reached the dashboard (QNX caps UDP packets at 9 KB).
 
-| When            | Jaime                                       | Alex                                        | Gio                                       |
-|-----------------|---------------------------------------------|---------------------------------------------|-------------------------------------------|
-| Hour 0 to 1     | Boot QNX, clone `qnx/QNX-AI-workshop`, camera running | Supervisor + mock_vision on the VM           | Kill test in `bos_proto.py`; get props    |
-| **Checkpoint 1**| All three report: frames on the Pi, IPC working, plume visible on the Mac |  |  |
-| Hour 1 to 3     | `mirage_vision` on Alex’s camera code, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the six-LED panel; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
-| **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → green valve LED goes off, red leak LED on |  |  |
-| Hour 3 to 4     | Recording session, all three, on the final rig (protocol below) |  |  |
-| Hour 4 to 7     | Load model v1, measure CPU time per frame   | Latency logging, run_mirage.sh, false-trip runs | Train v1, then v2 on Pi dumps; dashboard polish |
-| **Checkpoint 3**| Model in the loop, dashboard live           |                                             |                                           |
-| Until freeze    | Edge cases: people walking past, lighting, bumps | Chaos demo rehearsed                     | Devpost draft, slides if any              |
-| **Freeze**      | Four hours before hacking ends: no new features. Record the video, submit, rehearse three times. |  |  |
+## What's next
 
-## Recording protocol (Hour 3 to 4)
+- Natural backgrounds such as walls and brick instead of a dot screen.
+- Methane and hydrogen. Methane rises where butane sinks, so the same physics applies but the
+  signal is weaker. We couldn't bring natural gas indoors.
+- A hardware watchdog behind the relay, so the valve drops out unless the supervisor keeps it alive.
 
-Set the rig once and never touch it again: camera on a rigid mount about 1 m from the screen,
-the gas or heat source about halfway. Reset the reference after any bump.
+## Repository
 
-| Folder prefix | What to do for 60 s per clip, at least 3 clips each                  |
-|---------------|----------------------------------------------------------------------|
-| `gas_`        | Unlit lighter: 1 s press, 3 s pause. Also keyboard duster.           |
-| `heat_`       | Soldering iron from the hardware desk, hair dryer, hot mug           |
-| `motion_`     | Hand waving in front, walking past, light table bumps                |
-| `clear_`      | Nothing in front, normal room activity                               |
+| Path | What's there |
+|---|---|
+| `mirage-starter/vision/` | `mirage_vision`: camera → BOS → model → verdicts, plus the Pi's web view |
+| `mirage-starter/supervisor/` | The safety supervisor, and `mock_vision` for testing without a camera |
+| `mirage-starter/tools/` | `mirage_ctl` (status and reset), `cpu_hog` (chaos demo), `run_mirage.sh` |
+| `mirage-starter/mac/` | Dashboard, training, BOS prototype, dot screen (`dots.html`) |
+| `mirage-starter/export/` | The trained model |
+| `*.cpp` at the top level | QNX camera tools: `frame_stream` (browser stream) and `frame_grab` (saves a frame) |
 
-On the Pi: `mkdir -p /data/home/qnxuser/rec/gas_lighter_01`, start `mirage_vision -d` with that folder
-(one folder per clip: starting again on the same folder overwrites it), then on the Mac:
-`scp -r qnxuser@qnxpi.local:/data/home/qnxuser/rec ./pi_dumps`.
-Quiet frames inside an active clip are relabeled clear automatically by `train.py`.
+The team's build notes, wiring and demo script are in [`mirage-starter/README.md`](mirage-starter/README.md).
 
-## Commands
+## Running it
 
-**Alex, on the VM first**
+On the Pi (QNX 8, Raspberry Pi 5, Camera Module 3):
+
 ```sh
-qcc -Vgcc_ntox86_64 -O2 -DNO_GPIO -o supervisor supervisor/supervisor.c -lsocket
-qcc -Vgcc_ntox86_64 -O2 -o mock_vision supervisor/mock_vision.c
-./supervisor &          # boots CLOSED
-./mock_vision           # c clear, g gas, s stall, x reset
+sudo apk add opencv-dev tflite-runtime tflite-runtime-dev flatbuffers-dev qnx-sf-base-dev
+make mirage_vision CXX=clang++ EXTRA_CXXFLAGS=-I.
+# Build the supervisor and tools with qcc (see mirage-starter/README.md), then:
+sudo ./supervisor <dashboard IP>
+on -p 20 ./mirage_vision -s <x,y,w,h of the dot screen> -i <dashboard IP> -m model.tflite -R
 ```
-Then for the Pi (run as root, e.g. with `sudo`; if `<sys/rpi_gpio.h>` is missing on the host, copy
-`common/system/gpio/sys/rpi_gpio.h` from https://gitlab.com/qnx/projects/hardware-component-samples
-into `$QNX_TARGET/usr/include/sys/`; it is QNX-licensed, so don't commit it here):
+
+On the laptop:
+
 ```sh
-qcc -Vgcc_ntoaarch64le -O2 -o supervisor supervisor/supervisor.c -lsocket
-qcc -Vgcc_ntoaarch64le -O2 -o mirage_ctl tools/mirage_ctl.c
-qcc -Vgcc_ntoaarch64le -O2 -o cpu_hog tools/cpu_hog.c
-scp supervisor mirage_ctl cpu_hog tools/run_mirage.sh qnxuser@qnxpi.local:/data/home/qnxuser/
+pip install opencv-python numpy
+python mirage-starter/mac/web_dashboard.py --host 0.0.0.0
 ```
-On the Pi, check `ls /dev/gpio` first. The supervisor drives outputs through `/dev/gpio/msg`.
 
-**Jaime** (`vision/mirage_vision.cpp` runs the pipeline on Alex’s camera code)
-1. On the Pi, from the repo root, install the libraries the workshop’s `configure.sh` would (minus
-   its GUI and ROS) and build:
-   ```sh
-   sudo apk add opencv-dev tflite-runtime tflite-runtime-dev flatbuffers-dev qnx-sf-base-dev
-   make mirage_vision CXX=clang++ EXTRA_CXXFLAGS=-I.
-   ```
-2. Find the ROI: run `./mirage_vision`, then `.\pull_frame.ps1` on Windows. It saves the exact frame
-   the engine processes; read the dot screen’s top-left corner, width and height in Paint.
-3. Run it at priority 20 with the ROI: `on -p 20 ./mirage_vision -s x,y,w,h -i <mac ip>`, or through
-   `tools/run_mirage.sh`. Add `-m model.tflite` once Gio’s model arrives and `-d <folder>` to record.
-   After a bump, `slay -s SIGUSR1 mirage_vision` takes a new reference frame.
-4. If `cv::DISOpticalFlow` is missing from the Pi’s OpenCV build, swap in
-   `cv::calcOpticalFlowFarneback` and tell Gio so the Mac side matches.
-
-**Gio**
-```sh
-pip install opencv-python numpy tensorflow
-python mac/bos_proto.py                       # kill test with the Mac camera
-python mac/bos_proto.py --video clip.mov      # or a phone video
-python mac/train.py --data recordings pi_dumps
-python mac/dashboard.py
-scp export/model.tflite qnxuser@qnxpi.local:/data/home/qnxuser/
-```
-`train.py` prints a confusion matrix plus gas recall and false-gas rate. Put those numbers in the
-pitch. The exported model uses only basic ops (CONV_2D, MEAN, FULLY_CONNECTED, SOFTMAX), all
-version 1. If the Pi still rejects it, re-export with an older TensorFlow that matches the Pi’s
-TFLite.
-
-## Wiring (BCM GPIO numbers, physical pins in parentheses)
-
-The demo uses a six-LED panel. We can't put a real valve on lighter gas, so the green "valve
-open" LED stands in for a normally-closed solenoid valve; in a real install GPIO17 drives a relay
-that cuts the gas line (it's still driven, so a relay can be added without code changes).
-
-| Row                 | LED    | GPIO (pin) | Lit means                                                          |
-|---------------------|--------|------------|--------------------------------------------------------------------|
-| 1: gas and valve    | Green  | 21 (40)    | Valve open                                                         |
-|                     | Red    | 20 (38)    | Tripped on a leak                                                  |
-|                     | Yellow | 16 (36)    | The latest verdict is gas (lights before the 3-in-a-row trip)      |
-| 2: system health    | Green  | 13 (33)    | Blinks while vision's verdicts arrive in time; dark if it stalls or dies |
-|                     | Yellow | 19 (35)    | Tripped, and a reset would be accepted now                         |
-|                     | Red    | 26 (37)    | Tripped because vision went silent, or still in the boot lockout   |
-
-Each LED through a 220 to 330 Ω resistor to GND (pins 34 and 39 are next to the rows).
-
-| Optional part     | Connection                                                              |
-|-------------------|-------------------------------------------------------------------------|
-| Relay module      | IN to GPIO17 (11), VCC 5 V (2), GND (6). Energized = valve open          |
-| Buzzer            | Signal GPIO23 (16), VCC 3.3 V (17), GND (25). Sounds 1.5 s on a trip     |
-| Button            | GPIO24 (18) to GND (39) through the button. The supervisor enables the pull-up, so leaving it unwired is safe |
-
-LED long leg (anode) to the GPIO pin, short leg through the resistor to GND. Without a button,
-reset from SSH with `./mirage_ctl reset`. If you later add a relay module and it switches on
-when IN is low, set `RELAY_ACTIVE_HIGH 0` in `supervisor.c`; prefer an active-high module,
-because then a dead Pi can never hold the valve open.
-
-## The chaos demo (about 60 s at the table)
-
-1. Green "valve open" and the blinking green "vision alive" on, dashboard green.
-2. Puff the lighter. Yellow "gas" lights, then the valve trips (green off, red "leak" on); the
-   dashboard shows “first gas frame to valve” in ms.
-3. Run `./mirage_ctl reset` (or press the button, if wired) while gas is still there: refused.
-   Once it clears, yellow "reset ready" lights; reset again: accepted.
-4. `./cpu_hog 15 4 10`: nothing happens, because vision outranks the hog.
-5. `./cpu_hog 30 4 10`: vision starves, the supervisor fails closed within 250 ms. Your SSH session
-   freezes for those 10 s; that’s expected.
-6. `slay` the vision process: the supervisor trips on silence, `run_mirage.sh` restarts vision, and the
-   valve stays closed until a person resets it.
-
-## Answers to have ready
-
-- **Why QNX?** Fixed priorities, a microkernel that isolates the vision process from the safety
-  process, and message passing where the server inherits the sender’s priority. The deadline check
-  runs off a priority-50 timer pulse, so a stalled or killed vision process can’t keep the valve open.
-- **What if the supervisor dies?** It’s a few hundred lines with no dynamic allocation, at the top
-  priority. In production the relay would sit behind a hardware watchdog that drops out unless the
-  supervisor keeps toggling it.
-- **False alarms from cooking?** Heat is its own class, three consecutive gas frames are required, and
-  the confusion matrix shows the false-gas rate.
-- **Methane?** We can’t bring natural gas indoors. It bends light more than air like butane does but
-  rises, so the same physics applies.
-
-## Devpost skeleton (Gio)
-
-Inspiration (Aliso Canyon, gas line work, SF6 in substations) · What it does · How we built it
-(BOS, QNX processes and priorities, TFLite) · Challenges (sub-pixel shifts, bumps, train/serve
-skew) · Accomplishments (measured latency, chaos demo) · What’s next (hydrogen, natural backgrounds,
-hardware watchdog).
+Open `mirage-starter/mac/dots.html` full screen behind the area you're watching. Click **New
+reference frame** with nothing in front of it, then **Open valve**.
