@@ -46,15 +46,25 @@ const char kIndexHtml[] =
     "html,body{margin:0;height:100%;background:#111;color:#ccc;font:14px system-ui,sans-serif}"
     "body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}"
     "img{max-width:100%;max-height:calc(100vh - 40px);object-fit:contain;background:#000}"
-    "a{color:#8cf}</style></head><body>"
+    "a{color:#8cf}button{font:inherit;padding:4px 12px;margin-left:8px;cursor:pointer}"
+    "</style></head><body>"
     "<img src=\"/stream\" alt=\"Live Mirage vision view\">"
     "<div>Mirage vision on QNX &middot; region box turns red on gas &middot; "
-    "<a href=\"/snapshot.jpg\" download=\"mirage.jpg\">save snapshot</a></div>"
-    "</body></html>";
+    "<a href=\"/snapshot.jpg\" download=\"mirage.jpg\">save snapshot</a>"
+    "<button id=\"ref\" title=\"Clear the dot screen first: the next frame becomes the background\">"
+    "New reference frame</button> <span id=\"msg\"></span></div>"
+    "<script>"
+    "document.getElementById('ref').onclick=function(){"
+    "var m=document.getElementById('msg');m.textContent='...';"
+    "fetch('/reference',{method:'POST'}).then(function(r){"
+    "m.textContent=r.ok?'new reference taken':'failed ('+r.status+')';})"
+    ".catch(function(){m.textContent='Pi not reachable';});};"
+    "</script></body></html>";
 
 struct State {
     int priority = 10;
     bool rotate = false;
+    void (*onNewReference)() = nullptr;
     std::atomic<int> viewers{0};
 
     // Latest frame from the camera thread
@@ -181,7 +191,8 @@ void sendResponse(int fd, const char* status, const char* contentType, const voi
     }
 }
 
-// Reads the request headers and returns the path of a GET, or "" if invalid
+// Reads the request headers and returns the path of a GET or POST (POST paths are prefixed with
+// "POST "), or "" if invalid. Request bodies are ignored.
 std::string readRequestPath(int fd)
 {
     char buf[2048];
@@ -201,12 +212,16 @@ std::string readRequestPath(int fd)
         }
     }
     buf[used] = '\0';
-    if (std::strncmp(buf, "GET ", 4) != 0) {
+    const bool post = std::strncmp(buf, "POST ", 5) == 0;
+    if (!post && std::strncmp(buf, "GET ", 4) != 0) {
         return "";
     }
-    const char* start = buf + 4;
+    const char* start = buf + (post ? 5 : 4);
     const char* end = std::strpbrk(start, " ?\r\n");
-    return (end != nullptr) ? std::string(start, end) : "";
+    if (end == nullptr) {
+        return "";
+    }
+    return (post ? "POST " : "") + std::string(start, end);
 }
 
 // Waits for a JPEG newer than lastSeq. Returns nullptr on timeout.
@@ -282,6 +297,14 @@ void serveClient(int fd)
         streamMjpeg(fd);
     } else if (path == "/snapshot.jpg") {
         sendSnapshot(fd);
+    } else if (path == "POST /reference") {
+        if (g.onNewReference) {
+            g.onNewReference();
+        }
+        std::printf("[web] new reference frame requested from the browser\n");
+        std::fflush(stdout);
+        const char msg[] = "ok\n";
+        sendResponse(fd, "200 OK", "text/plain", msg, sizeof(msg) - 1);
     } else if (!path.empty()) {
         const char msg[] = "Not found\n";
         sendResponse(fd, "404 Not Found", "text/plain", msg, sizeof(msg) - 1);
@@ -306,10 +329,11 @@ void acceptLoop(int listenFd)
 
 }  // namespace
 
-bool web_view_start(int port, int priority, bool rotate180)
+bool web_view_start(int port, int priority, bool rotate180, void (*onNewReference)())
 {
     g.priority = priority;
     g.rotate = rotate180;
+    g.onNewReference = onNewReference;
     std::signal(SIGPIPE, SIG_IGN);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);

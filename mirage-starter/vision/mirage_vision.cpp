@@ -308,7 +308,8 @@ int main(int argc, char* argv[])
     }
     std::printf("Mirage vision on CAMERA_UNIT_%d (Ctrl+C to stop, `slay -s SIGUSR1 mirage_vision` for a new reference)\n",
                 (int)unit);
-    if (port > 0 && web_view_start(static_cast<int>(port), kWebPriority, rotate)) {
+    // The page's "New reference frame" button does the same as SIGUSR1
+    if (port > 0 && web_view_start(static_cast<int>(port), kWebPriority, rotate, [] { gNewReference = true; })) {
         std::printf("[vision] browser view on http://qnxpi.local:%ld/\n", port);
     }
     std::fflush(stdout);
