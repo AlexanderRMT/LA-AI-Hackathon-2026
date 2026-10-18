@@ -31,6 +31,7 @@ static const size_t kMaxThumbBytes = 9216;      // QNX default net.inet.udp.maxd
 static const float kPhysicsGasPx = 0.30f;      // fallback rule before the model exists
 static int g_link = -1;                         // supervisor reachable? -1 until the first verdict
 static mirage_status_t g_status;                // supervisor's reply to the last verdict
+static bool g_model_missing = false;            // -m was given but didn't load: send no verdicts
 
 static uint64_t mono_ns()
 {
@@ -45,8 +46,11 @@ void mirage_init(const cv::Rect& screen_roi, const char* model_path, const char*
     BosParams p;
     p.roi = screen_roi;
     g_engine = new BosEngine(p);
-    if (model_path) {
-        g_engine->loadModel(model_path);
+    if (model_path && !g_engine->loadModel(model_path)) {
+        // Never fall back to the physics rule when a model was asked for: it calls heat gas.
+        std::fprintf(stderr, "[vision] model %s did not load: sending no verdicts, so the valve "
+                             "closes on the supervisor's deadline\n", model_path);
+        g_model_missing = true;
     }
     if (dump_dir) {
         g_engine->startDump(dump_dir);
@@ -62,6 +66,13 @@ void mirage_init(const cv::Rect& screen_roi, const char* model_path, const char*
     }
 }
 
+bool mirage_check_model(const char* model_path)
+{
+    BosParams p;
+    BosEngine probe(p);
+    return probe.loadModel(model_path);
+}
+
 void mirage_reset_reference()
 {
     if (g_engine) {
@@ -71,7 +82,7 @@ void mirage_reset_reference()
 
 bool mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns, mirage_verdict_t* verdict)
 {
-    if (!g_engine) {
+    if (!g_engine || g_model_missing) {
         return false;
     }
     cv::Mat gray;

@@ -119,3 +119,17 @@ about 100,000,000. `train.py` warns per clip when they don’t.
   gas clips were recorded back to back, so these are probably real gas pooled from earlier presses.
   An affine fit instead of the median in bump removal would take tap zoom out before the model sees
   it; that is contract 3 (BosParams and mac/*.py), so only with all three of us.
+- On the Pi the model is `/data/home/qnxuser/model.tflite`. Add `-m /data/home/qnxuser/model.tflite`
+  to the mirage_vision command and look for `[bos] model loaded:` in its output.
+
+## vision/: a model that doesn't load no longer falls back silently (Gio, for Jaime)
+
+- `mirage_hook.cpp` ignored what `loadModel()` returned. With a wrong `-m` path, a corrupt file or
+  an op the Pi's TFLite lacks, mirage_vision printed one `[bos]` line and kept running on the physics
+  rule, which calls the hot mug gas (its shift is 1.3 to 1.9 px; the rule trips at 0.30). Now
+  mirage_vision checks the model before it opens the camera and won't start without it (exit 1 with
+  the reason; under `run_mirage.sh` it keeps retrying while the supervisor stays closed). If the
+  load still fails later, no verdicts are sent, so the valve closes on the supervisor's deadline.
+  Without `-m` nothing changed.
+- Tested on the Pi from a separate build: a missing file and a junk file both refuse to start with
+  the reason; `export/model.tflite` loads in TFLite 2.21 (XNNPACK on the CPU).

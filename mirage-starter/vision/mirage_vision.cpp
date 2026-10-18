@@ -13,7 +13,8 @@
 //       in its pixels, so record and run with the same -r
 //   -w  frames to skip before the reference frame, so auto-exposure settles (default 30)
 //   -s  where the dot screen sits in the frame (default: the whole frame)
-//   -m  TFLite model; without one, a big shift counts as gas
+//   -m  TFLite model; it must load or mirage_vision won't start. Without -m, a big shift
+//       counts as gas
 //   -d  record fields to this folder, named after the label (mkdir -p it first)
 //   -i  IP of the Mac running mac/dashboard.py, for shift-map thumbnails
 //   -p  port for the browser view at http://<pi>:<port>/ (default 8080; 0 = off). It renders on
@@ -267,6 +268,13 @@ int main(int argc, char* argv[])
                         " [-p port] [-R]\n", argv[0]);
             return (opt == 'h') ? EXIT_SUCCESS : EXIT_FAILURE;
         }
+    }
+
+    // A model that was asked for must load, before the camera opens: running on without it
+    // would quietly switch to the physics rule, which calls heat gas
+    if (state.modelPath && !mirage_check_model(state.modelPath)) {
+        std::printf("[vision] not starting: model %s did not load (reason above)\n", state.modelPath);
+        return EXIT_FAILURE;
     }
 
     // Same signal handling as frame_stream: block the signals before any thread exists so every
