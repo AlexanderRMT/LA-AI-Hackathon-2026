@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Mirage</title>
+<link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%238c939c'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-link="connecting" data-tone="none" data-lost="0">
+
+<svg class="symbols" aria-hidden="true" focusable="false">
+  <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.2 12.4 2.6 2.6 5-5.4"/></symbol>
+  <symbol id="i-alarm" viewBox="0 0 24 24"><path d="M8.3 3h7.4L21 8.3v7.4L15.7 21H8.3L3 15.7V8.3z"/><path d="M12 7.6v5.2"/><path d="M12 16.3v.2"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 4.4a2 2 0 0 1 3.4 0l7.6 13.1a2 2 0 0 1-1.7 3H4.4a2 2 0 0 1-1.7-3z"/><path d="M12 9.4v4.3"/><path d="M12 17v.2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+  <symbol id="i-unknown" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9.5a2.4 2.4 0 1 1 3.3 2.2c-.6.3-1 .8-1 1.5v.3"/><path d="M12 16.6v.2"/></symbol>
+  <symbol id="i-none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="2.4 3.1"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.5 3.5h5"/><path d="M10.5 3.5v6L5 18.6a1.3 1.3 0 0 0 1.1 1.9h11.8a1.3 1.3 0 0 0 1.1-1.9L13.5 9.5v-6"/><path d="M7.6 14.5h8.8"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.8v12.4a.8.8 0 0 0 1.2.7l9.6-6.2a.8.8 0 0 0 0-1.4L9.2 5.1a.8.8 0 0 0-1.2.7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.6"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6.5v11"/><path d="M15 6.5v11"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.2a1.7 1.7 0 0 0-1.7-1.7H6.2a1.7 1.7 0 0 0-1.7 1.7v7.6a1.7 1.7 0 0 0 1.7 1.7h2.3"/></symbol>
+  <symbol id="c-clear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></symbol>
+  <symbol id="c-gas" viewBox="0 0 24 24"><path d="M12 4.5 19.5 12 12 19.5 4.5 12z"/></symbol>
+  <symbol id="c-heat" viewBox="0 0 24 24"><path d="M12 5.5 19 18.5H5z"/></symbol>
+  <symbol id="c-motion" viewBox="0 0 24 24"><path d="m6 7 5 5-5 5"/><path d="m13 7 5 5-5 5"/></symbol>
+  <symbol id="c-unknown" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" stroke-dasharray="2.2 2.8"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="4" cy="4" r="1.5"/><circle cx="10.7" cy="4" r="1.5" class="shifted"/><circle cx="16" cy="4" r="1.5"/>
+      <circle cx="4" cy="10" r="1.5"/><circle cx="11.6" cy="10" r="1.5" class="shifted"/><circle cx="16" cy="10" r="1.5"/>
+      <circle cx="4" cy="16" r="1.5"/><circle cx="10.7" cy="16" r="1.5" class="shifted"/><circle cx="16" cy="16" r="1.5"/>
+    </svg>
+    <span class="brand-name">Mirage</span>
+    <span class="brand-sub">Gas-leak monitor</span>
+  </div>
+  <div class="link">
+    <span class="link-shape" aria-hidden="true"></span>
+    <span class="link-label" id="link-label">Connecting to the console</span>
+    <span class="link-meta" id="link-meta"></span>
+  </div>
+  <div class="topbar-actions">
+    <span class="note" id="sim-note" role="status"></span>
+    <button class="btn" id="sim-btn" type="button" hidden>
+      <svg class="icon icon-fill" aria-hidden="true"><use href="#i-play"/></svg><span>Run simulator</span>
+    </button>
+  </div>
+</header>
+
+<div class="banner banner-sim" id="banner-sim" hidden>
+  <svg class="icon" aria-hidden="true"><use href="#i-flask"/></svg>
+  <strong>Simulated data</strong>
+  <span id="banner-sim-text"></span>
+</div>
+<div class="banner banner-warn" id="banner-multi" role="alert" hidden>
+  <svg class="icon" aria-hidden="true"><use href="#i-warn"/></svg>
+  <strong id="banner-multi-title">Two senders</strong>
+  <span id="banner-multi-text"></span>
+</div>
+<div class="banner banner-alarm" id="banner-lost" role="alert" hidden>
+  <svg class="icon" aria-hidden="true"><use href="#i-alarm"/></svg>
+  <strong>Console not responding</strong>
+  <span>The page stopped getting updates, so every value below is frozen. Check the terminal running <code>web_dashboard.py</code>.</span>
+</div>
+
+<main class="layout" id="main">
+  <section class="panel view" aria-labelledby="view-title">
+    <header class="panel-head">
+      <h2 id="view-title">Shift map</h2>
+      <span class="meta" id="img-meta"></span>
+      <div class="colorbar" role="img" aria-label="Color scale: black is no dot shift, pale yellow is 1 pixel of shift or more">
+        <span class="colorbar-label">Dot shift</span>
+        <span class="tick">0</span><span class="colorbar-ramp"></span><span class="tick">1 px</span>
+      </div>
+    </header>
+    <div class="stage">
+      <img id="thumb" alt="Shift map from the camera. Brightness shows how far the background dots moved; full brightness is 1 pixel." hidden>
+      <div class="stage-empty" id="stage-empty">
+        <p class="stage-empty-title" id="stage-empty-title">Connecting to the console</p>
+        <p class="stage-empty-body" id="stage-empty-body"></p>
+      </div>
+      <div class="stage-tags">
+        <span class="tag" data-tone="sim" id="tag-sim" hidden>Simulated</span>
+        <span class="tag" data-tone="warn" id="tag-stale" hidden></span>
+        <span class="tag" data-tone="accent" id="tag-paused" hidden>Paused</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel history" aria-labelledby="history-title">
+    <header class="panel-head">
+      <h2 id="history-title">Gas probability</h2>
+      <span class="meta" id="history-meta">last 120 updates</span>
+      <div class="controls">
+        <div class="segmented" role="group" aria-label="History view">
+          <button type="button" data-view="chart" aria-pressed="true">Chart</button>
+          <button type="button" data-view="table" aria-pressed="false">Table</button>
+        </div>
+        <button class="btn btn-sm" id="pause-btn" type="button" aria-pressed="false" aria-keyshortcuts="P">
+          <svg class="icon" aria-hidden="true"><use href="#i-pause"/></svg><span>Pause</span>
+        </button>
+      </div>
+    </header>
+    <ul class="legend" id="legend" aria-label="Legend">
+      <li><span class="key key-line"></span>p(gas)</li>
+      <li><span class="key key-thresh"></span>counts as gas</li>
+      <li><span class="key key-open"></span>valve open</li>
+      <li><span class="key key-closed"></span>valve closed</li>
+    </ul>
+    <div class="chart-wrap" id="chart-wrap">
+      <svg id="chart" role="img" tabindex="0" aria-label="No telemetry yet"></svg>
+      <div class="tooltip" id="tooltip" hidden></div>
+      <p class="chart-empty"><span id="chart-empty">No telemetry yet</span></p>
+    </div>
+    <div class="table-wrap" id="table-wrap" tabindex="0" hidden>
+      <table>
+        <caption class="sr-only">p(gas) and valve state for each telemetry update, newest first</caption>
+        <thead><tr><th scope="col" id="table-time">Time</th><th scope="col">p(gas)</th><th scope="col">Valve</th></tr></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="side">
+    <section class="panel valve" id="valve" data-tone="none" aria-labelledby="valve-title">
+      <div class="valve-main">
+        <svg class="icon valve-icon" id="valve-icon" aria-hidden="true"><use href="#i-none"/></svg>
+        <div class="valve-head">
+          <h2 class="label" id="valve-title">Valve</h2>
+          <p class="valve-word" id="valve-word">—</p>
+        </div>
+        <span class="tag" data-tone="warn" id="valve-tag" hidden>Last reported</span>
+      </div>
+      <p class="valve-line" id="valve-line"></p>
+      <dl class="facts">
+        <div><dt>Trip reason</dt><dd id="valve-reason">—</dd></div>
+        <div id="reset-row" hidden>
+          <dt>Reset on the Pi</dt>
+          <dd class="reset-cmd"><code id="reset-cmd">./mirage_ctl reset</code>
+            <button class="btn btn-sm btn-ghost" id="copy-btn" type="button" aria-label="Copy the reset command">
+              <svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span>
+            </button>
+          </dd>
+        </div>
+      </dl>
+      <p class="hint" id="reset-hint" hidden></p>
+    </section>
+
+    <section class="panel verdict" id="verdict" aria-labelledby="verdict-title">
+      <header class="panel-head">
+        <h2 id="verdict-title">Latest verdict</h2>
+        <span class="meta" id="verdict-meta"></span>
+        <span class="tag" data-tone="warn" id="verdict-tag" hidden>Last reported</span>
+      </header>
+      <div class="verdict-body">
+        <div class="class-row">
+          <svg class="icon class-icon" id="class-icon" aria-hidden="true"><use href="#c-unknown"/></svg>
+          <span class="class-name" id="class-name">—</span>
+        </div>
+        <div class="metric">
+          <div class="metric-top"><span class="label">p(gas)</span><span class="value" id="pgas-value">—</span></div>
+          <div class="meter" aria-hidden="true"><span class="meter-fill" id="pgas-fill"></span><span class="meter-mark" id="pgas-mark"></span></div>
+          <p class="caption" id="pgas-caption">Probability reported by vision. Not a gas concentration.</p>
+        </div>
+        <div class="metric">
+          <div class="metric-top"><span class="label">Peak shift</span><span class="value value-sm" id="peak-value">—</span></div>
+          <p class="caption">Largest dot movement in the 64 × 64 field.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel timing" id="timing" aria-labelledby="timing-title">
+      <header class="panel-head">
+        <h2 id="timing-title">Timing</h2>
+        <span class="meta">measured on the Pi</span>
+        <span class="tag" data-tone="warn" id="timing-tag" hidden>Last reported</span>
+      </header>
+      <div class="stats">
+        <div class="stat">
+          <span class="label">Since last verdict</span>
+          <span class="value" id="since-value">—</span>
+          <span class="bar" aria-hidden="true"><span id="since-fill"></span></span>
+          <span class="sub" id="since-sub"></span>
+        </div>
+        <div class="stat">
+          <span class="label">Frame to supervisor</span>
+          <span class="value" id="lat-value">—</span>
+          <span class="sub" id="lat-sub"></span>
+        </div>
+        <div class="stat">
+          <span class="label">Latency p99</span>
+          <span class="value" id="p99-value">—</span>
+          <span class="sub" id="p99-sub"></span>
+        </div>
+        <div class="stat">
+          <span class="label">First gas frame to valve</span>
+          <span class="value" id="d2t-value">—</span>
+          <span class="sub" id="d2t-sub"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel link-panel" id="link-panel" aria-labelledby="link-title">
+      <header class="panel-head">
+        <h2 id="link-title">Connection</h2>
+        <span class="meta" id="lp-meta"></span>
+      </header>
+      <dl class="facts">
+        <div><dt>Telemetry</dt><dd id="lp-rate">—</dd></div>
+        <div class="facts-top"><dt>Senders</dt><dd id="lp-senders">—</dd></div>
+        <div><dt>Shift-map images</dt><dd id="lp-images">—</dd></div>
+      </dl>
+    </section>
+  </div>
+</main>
+
+<footer class="statusline">
+  <span id="foot-host"></span>
+  <span id="foot-ports"></span>
+  <span id="foot-packets"></span>
+  <span class="grow"></span>
+  <span id="foot-rules"></span>
+  <span class="keys"><kbd>P</kbd> pause <kbd>T</kbd> table</span>
+</footer>
+
+<div class="sr-only" id="announcer" aria-live="assertive"></div>
+<script src="/app.js"></script>
+</body>
+</html>

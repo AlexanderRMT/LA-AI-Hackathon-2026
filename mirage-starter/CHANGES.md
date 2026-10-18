@@ -25,6 +25,23 @@ same telemetry JSON.
   loads on the Pi and matches the I/O contract (float32 1x64x64x8 in, 1x4 out; ops CONV_2D, MEAN,
   FULLY_CONNECTED, SOFTMAX, all version 1, min runtime 1.6). Its verdicts mean nothing on real data.
 
+## mac/ web console (Gio)
+
+- **web_dashboard.py** and **web/** (new): the dashboard in a browser. `python mac/web_dashboard.py`
+  opens http://127.0.0.1:8750. It reads UDP 5005 and 5006 exactly like dashboard.py (same buffer
+  sizes, 1 s stale rule, valve shown open only while fresh, class names, 120-update history, p99 over
+  the last 600 latencies) and only listens; it never sends anything to the Pi. dashboard.py is
+  unchanged and stays the fallback. Only one of the two can own the ports at a time, and the console
+  says so if dashboard.py is already running.
+- What it adds is context from data we already receive: which machine is sending (two senders at once
+  get a warning), a banner when the data comes from this Mac (fake_pi.py), stale or missing images,
+  how old the last verdict is, and the trip rules read from common/mirage_msgs.h. It can start and
+  stop fake_pi.py from the page, only from this Mac and never while real telemetry is arriving.
+- **test_web_dashboard.py** (new): replays the same packets through dashboard.py's real loop and the
+  console and checks that every displayed line and history bar match: `python mac/test_web_dashboard.py`.
+- Not fixed, for the record: dashboard.py raises if a packet is valid JSON but not an object (`42`),
+  or has a non-numeric `p_gas`, `cls` or `lat_ms`. The supervisor never sends those; the console skips them.
+
 ## For Jaime: the processing rate is not 10 Hz on real cameras
 
 `BosEngine::process` compares each frame with the last processed one. With a 30 fps camera, three
