@@ -2,7 +2,8 @@
 //
 // Serves http://<pi>:<port>/ with the camera frame, the shift map glowing over the dot screen
 // region, and the latest verdict and valve state; /region streams just the region with a margin
-// around it (the Mac console shows that one). Rendering, JPEG encoding and the HTTP clients
+// around it and no status bar (the Mac console shows that one, with the verdict beside it).
+// Rendering, JPEG encoding and the HTTP clients
 // all run on threads below the vision thread, so the view can stall but never delays a verdict.
 #pragma once
 

@@ -95,7 +95,9 @@ struct State {
     uint64_t seq[kViews] = {};
 };
 
-State g;
+// Never destroyed: the detached render and HTTP threads may still be waiting on its mutexes and
+// condition variables when the process exits, and destroying them under a waiter aborts the exit
+State& g = *new State;
 
 // Threads start at their creator's priority (the vision process runs at 20), so each one drops
 // itself below the vision thread first. Threads it creates inherit the lower priority.
@@ -137,6 +139,9 @@ cv::Mat render(const WebViewFrame& f, View view)
     cv::rectangle(img, roi, gas ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 200, 0), 2);
     if (g.rotate) {
         cv::rotate(img, img, cv::ROTATE_180);
+    }
+    if (view == kRegion) {
+        return img;   // the console around it already shows the valve and the verdict
     }
 
     cv::Mat out(img.rows + kBarHeight, img.cols, CV_8UC3, cv::Scalar(20, 20, 20));
