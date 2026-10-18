@@ -88,7 +88,13 @@ bool BosEngine::process(const cv::Mat& gray_full, uint64_t frame_ns, BosResult& 
         return false;
     }
 
-    dis_->calc(ref_, gray, flow_);                      // CV_32FC2, in pixels
+    // DIS asserts on non-continuous input, which a region of the frame always is
+    const cv::Mat* cur = &gray;
+    if (!gray.isContinuous()) {
+        gray.copyTo(cur_);
+        cur = &cur_;
+    }
+    dis_->calc(ref_, *cur, flow_);                      // CV_32FC2, in pixels
 
     // 1. Remove whole-image shift (table bumps, camera sway): subtract the median flow.
     std::vector<float> fx, fy;

@@ -62,7 +62,7 @@ public:
 private:
     BosParams p_;
     cv::Ptr<cv::DISOpticalFlow> dis_;
-    cv::Mat ref_, flow_, smooth_;           // ref: CV_8U, flows: CV_32FC2
+    cv::Mat ref_, cur_, flow_, smooth_;     // ref, cur: CV_8U, flows: CV_32FC2
     std::deque<cv::Mat> history_;           // grid x grid CV_32FC2, oldest first
     cv::Size roi_size_;
     bool want_ref_ = true;
