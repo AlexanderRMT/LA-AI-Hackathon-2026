@@ -52,9 +52,15 @@ def scripted(t, rng):
 
 
 def thumbnail(field, width=360, aspect=9 / 16):
-    """Same picture as BosEngine::visual(): 1 px of shift = full brightness, inferno colors."""
-    mag = np.hypot(field[..., 0], field[..., 1])
-    m8 = np.clip(mag * 255.0, 0, 255).astype(np.uint8)
+    """Same picture as BosEngine::visual(): whole-box zoom taken out, shifts under 0.06 px black, a
+    square-root curve so gas shows bright purple, 1 px of shift = full brightness, inferno colors."""
+    rows, cols = field.shape[:2]
+    x, y = np.arange(cols) - (cols - 1) / 2, np.arange(rows) - (rows - 1) / 2
+    b = np.tensordot(x, field.sum(axis=0), axes=1) / (rows * np.sum(x * x))
+    d = np.tensordot(y, field.sum(axis=1), axes=1) / (cols * np.sum(y * y))
+    flat = field - field.mean(axis=(0, 1)) - x[None, :, None] * b - y[:, None, None] * d
+    mag = np.hypot(flat[..., 0], flat[..., 1])
+    m8 = (np.sqrt(np.clip((mag - 0.06) / (1.0 - 0.06), 0, 1)) * 255).astype(np.uint8)
     img = cv2.resize(cv2.applyColorMap(m8, cv2.COLORMAP_INFERNO), (width, int(width * aspect)),
                      interpolation=cv2.INTER_CUBIC)
     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])

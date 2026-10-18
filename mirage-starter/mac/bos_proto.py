@@ -27,6 +27,22 @@ import numpy as np
 GRID, EMA, PROC_HZ = 64, 0.5, 10.0          # must match BosParams in vision/bos_engine.hpp
 LABELS = ["clear", "gas", "heat", "motion"]
 FULL_SCALE_PX = 1.0                         # 1 px of shift = brightest color on screen
+VIS_FLOOR_PX = 0.06                         # picture only: camera noise under this stays black
+
+
+def shift_picture(flow):
+    """The shift map as shown, like BosEngine::visual(); recordings keep the raw field. A whole-box
+    zoom or tilt (camera drift, a table tap) is fitted and taken out, noise stays black, and a
+    square-root curve shows gas-sized shifts (0.1 to 0.4 px) as bright purple, not dark purple."""
+    h, w = flow.shape[:2]
+    x, y = np.arange(w) - (w - 1) / 2, np.arange(h) - (h - 1) / 2
+    a = flow.mean(axis=(0, 1))
+    b = np.tensordot(x, flow.sum(axis=0), axes=1) / (h * np.sum(x * x))
+    d = np.tensordot(y, flow.sum(axis=1), axes=1) / (w * np.sum(y * y))
+    flat = flow - a - x[None, :, None] * b - y[:, None, None] * d
+    mag = cv2.GaussianBlur(np.linalg.norm(flat, axis=2), (0, 0), 2.0)
+    lifted = np.sqrt(np.clip((mag - VIS_FLOOR_PX) / (FULL_SCALE_PX - VIS_FLOOR_PX), 0, 1))
+    return cv2.applyColorMap((lifted * 255).astype(np.uint8), cv2.COLORMAP_INFERNO)
 
 
 def save_clip(out_dir, label, fields, times, peaks):
@@ -114,9 +130,7 @@ def main():
 
         if args.headless:
             continue
-        mag = cv2.GaussianBlur(np.linalg.norm(flow, axis=2), (0, 0), 2.0)
-        vis = cv2.applyColorMap(np.clip(mag / FULL_SCALE_PX * 255.0, 0, 255).astype(np.uint8),
-                                cv2.COLORMAP_INFERNO)
+        vis = shift_picture(flow)
         scale = 720.0 / max(w, h)
         vis = cv2.resize(vis, (int(w * scale), int(h * scale)))
         cam = cv2.resize(gray, (int(w * scale), int(h * scale)))

@@ -175,17 +175,53 @@ bool BosEngine::process(const cv::Mat& gray_full, uint64_t frame_ns, BosResult& 
     return true;
 }
 
+// Picture only: camera noise under this shift stays black
+static const float kVisFloorPx = 0.06f;
+
+// Fits c = a + b*x + d*y over the grid and subtracts it: the whole-box zoom or tilt that a
+// drifting camera or a table tap leaves after median bump removal. Gas is a local patch, so it stays.
+static void remove_zoom(cv::Mat& c)
+{
+    const double hx = (c.cols - 1) / 2.0, hy = (c.rows - 1) / 2.0;
+    double s = 0, sx = 0, sy = 0;
+    for (int y = 0; y < c.rows; y++) {
+        const float* row = c.ptr<float>(y);
+        for (int x = 0; x < c.cols; x++) {
+            s += row[x];
+            sx += (x - hx) * row[x];
+            sy += (y - hy) * row[x];
+        }
+    }
+    const double n = static_cast<double>(c.rows) * c.cols;
+    const double a = s / n;
+    const double b = sx / (c.rows * (c.cols * (static_cast<double>(c.cols) * c.cols - 1) / 12.0));
+    const double d = sy / (c.cols * (c.rows * (static_cast<double>(c.rows) * c.rows - 1) / 12.0));
+    for (int y = 0; y < c.rows; y++) {
+        float* row = c.ptr<float>(y);
+        for (int x = 0; x < c.cols; x++) {
+            row[x] -= static_cast<float>(a + b * (x - hx) + d * (y - hy));
+        }
+    }
+}
+
 cv::Mat BosEngine::visual(int width) const
 {
     const int height = roi_size_.width > 0 ? width * roi_size_.height / roi_size_.width : width * 2 / 3;
     if (smooth_.empty()) {
         return cv::Mat::zeros(height, width, CV_8UC3);
     }
+    // The picture only; the model and the dumps get smooth_ as it is (split copies it). Zoom taken
+    // out, noise kept black, and a square-root curve so gas-sized shifts (0.1 to 0.4 px) show as
+    // bright purple instead of dark purple. 1 px of shift is still full brightness.
     std::vector<cv::Mat> ch;
     cv::split(smooth_, ch);
+    remove_zoom(ch[0]);
+    remove_zoom(ch[1]);
     cv::Mat mag, m8, color, big;
     cv::magnitude(ch[0], ch[1], mag);
-    mag.convertTo(m8, CV_8U, 255.0);                   // 1 px of shift = full brightness
+    cv::Mat lifted = cv::max(cv::Mat(mag - kVisFloorPx), 0.0) * (1.0 / (1.0 - kVisFloorPx));
+    cv::sqrt(lifted, lifted);
+    lifted.convertTo(m8, CV_8U, 255.0);
     cv::applyColorMap(m8, color, cv::COLORMAP_INFERNO);
     cv::resize(color, big, cv::Size(width, height), 0, 0, cv::INTER_CUBIC);
     return big;

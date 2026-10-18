@@ -144,3 +144,16 @@ about 100,000,000. `train.py` warns per clip when they don’t.
   `http://<this computer's IP>:8750` too), and from devices named with `--allow-control IP[,IP]`.
   The server tells each page whether it may (`can_control` in `/api/state`). The simulator buttons
   keep the original loopback-only guard.
+
+## Shift map: gas shows bright purple (Gio)
+
+- Picture only; the model, the dumps and detection see the same field as before. In
+  `BosEngine::visual()` (the Pi's browser view and the dashboard thumbnails), `bos_proto.py` and
+  `fake_pi.py`: a fitted whole-box zoom or tilt is taken out first (camera drift and table taps
+  leave one after median bump removal; gas is a local patch), shifts under 0.06 px stay black, and
+  a square-root curve lifts gas-sized shifts (0.1 to 0.4 px) from dark purple to bright purple and
+  magenta. 1 px is still full brightness. Before, a slow drift or a tap washed the whole box purple
+  and could hide the gas; a still scene now stays black.
+- Tested with the real engine on the Pi (synthetic dot-screen frames): a 0.3 px zoom went from
+  brightness 50 everywhere to 0; a 0.25 px gas band from 43 to 67, and with a zoom on top from
+  dimmer than its surroundings (28 vs 42) to 67 vs 0.
