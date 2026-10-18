@@ -1,0 +1,7 @@
+# Build outputs
+frame_grab
+frame_stream
+*.o
+
+# Pulled frames
+frame.bmp
