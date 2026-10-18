@@ -271,11 +271,12 @@
     $("valve-tag").hidden = !v.tag;
     if (v.tag) setText($("valve-tag"), v.tag);
     const showReset = Boolean(v.closed) && link.key !== "lost";
-    $("reset-row").hidden = !showReset;
+    const canOpen = showReset && canControlPi();
+    $("reset-row").hidden = !canOpen;
+    $("open-btn").hidden = !canOpen;
     $("reset-hint").hidden = !showReset;
-    $("open-btn").hidden = !(showReset && canControlPi());
     if (showReset) {
-      setText($("reset-hint"), `Or press the reset button, if one is wired. The supervisor refuses a reset until it has seen ${snap.constants.reset_clear} clear verdicts in a row.`);
+      setText($("reset-hint"), `The supervisor only reopens the valve after ${snap.constants.reset_clear} clear verdicts in a row.`);
     }
   }
 
@@ -714,22 +715,6 @@
     piButton("open-btn", "/api/reset", () => "Valve open: the supervisor accepted the reset."));
   $("pause-btn").addEventListener("click", () => setPaused(!paused));
   for (const b of document.querySelectorAll(".segmented button")) b.addEventListener("click", () => setView(b.dataset.view));
-
-  $("copy-btn").addEventListener("click", async () => {
-    const label = $("copy-btn").querySelector("span");
-    const text = $("reset-cmd").textContent;
-    try {
-      await navigator.clipboard.writeText(text);
-      label.textContent = "Copied";
-    } catch {
-      const range = document.createRange();
-      range.selectNodeContents($("reset-cmd"));
-      getSelection().removeAllRanges();
-      getSelection().addRange(range);
-      label.textContent = "Press ⌘C";
-    }
-    setTimeout(() => { label.textContent = "Copy"; }, 1600);
-  });
 
   document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;

@@ -79,6 +79,8 @@ code {
 .btn[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; background: transparent; opacity: 0.6; }
 .btn[aria-busy="true"] { opacity: 0.6; }
 .btn-sm { height: 1.95rem; padding: 0 0.65rem; font-size: 0.9rem; }
+.btn-primary { background: #0f62fe; color: #ffffff; }   /* Carbon button-primary */
+.btn-primary:hover { background: #0050e6; }
 .btn-ghost { background: transparent; color: var(--accent); }
 .btn-ghost:hover { background: var(--raised); color: var(--ink); }
 .btn .icon { width: 1em; height: 1em; }
@@ -248,7 +250,8 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .facts > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 1.95rem; }
 .facts dt { color: var(--ink-2); font-size: 0.92rem; }
 .facts dd { margin: 0; font-weight: 500; text-align: right; }
-.reset-cmd { display: flex; align-items: center; gap: 0.35rem; }
+.reset-row { margin-top: 0.95rem; }
+.reset-row .btn { width: 100%; justify-content: center; }
 .hint { margin-top: 0.55rem; color: var(--ink-3); font-size: 0.85rem; line-height: 1.45; }
 
 /* ---------------------------------------------------------------- connection */
