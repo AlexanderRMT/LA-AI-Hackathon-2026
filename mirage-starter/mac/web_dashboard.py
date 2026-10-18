@@ -4,8 +4,10 @@
 Shows the same data as dashboard.py, read the same way: the supervisor's telemetry JSON on
 UDP 5005 and the vision process's JPEG shift-map thumbnails on UDP 5006. While the Pi is live,
 the image panel shows mirage_vision's own camera view of the dot screen region instead
-(http://<pi>:8080/region), and its "New reference frame" button is the one thing the console
-sends the Pi. While it runs it owns UDP 5005 and 5006, so dashboard.py
+(http://<pi>:8080/region). Its "New reference frame" and "Open valve" buttons are the only things
+the console sends the Pi, through mirage_vision; the supervisor still decides whether the valve
+opens. They work from this computer, or from devices named with --allow-control.
+While it runs it owns UDP 5005 and 5006, so dashboard.py
 (still the fallback) can't run at the same time, and the other way round.
 
   python mac/web_dashboard.py                  serves http://127.0.0.1:8750 and opens it
@@ -26,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -253,8 +256,9 @@ STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/app.js": ("app.js", "text/javascript; charset=utf-8")}
 
 
-def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT):
+def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT, allow_control=()):
     streams = threading.BoundedSemaphore(MAX_STREAMS)
+    allow_control = set(allow_control)
 
     def pi_address(snap):
         """The Pi sending live telemetry, or None: nothing yet, or it comes from this Mac."""
@@ -286,6 +290,7 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT)
                            "blocked": console.sim_block_reason(now, sim.running())}
             # mirage_vision's own web view on the Pi: the page shows its /region stream
             snap["pi_view"] = {"host": pi_address(snap), "port": pi_view_port}
+            snap["can_control"] = self._pi_control_allowed(require_header=False)   # for this viewer
             return json.dumps(snap, allow_nan=False).encode()
 
         def do_GET(self):
@@ -338,6 +343,21 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT)
                 return False
             return host.rsplit(":", 1)[0] in ("127.0.0.1", "localhost", "[::1]")
 
+        def _pi_control_allowed(self, require_header=True):
+            """New reference frame and Open valve: this computer, by any of its addresses, or a
+            device named with --allow-control, and only from this console's own page."""
+            client = self.client_address[0]
+            if client not in console.local_ips and client not in allow_control:
+                return False
+            if require_header and self.headers.get("X-Mirage-Control") != "1":
+                return False
+            host = self.headers.get("Host", "")
+            origin = self.headers.get("Origin")
+            if origin and urlsplit(origin).netloc != host:
+                return False
+            hostname = host.rsplit(":", 1)[0]
+            return hostname in ("localhost", "[::1]") or hostname in console.local_ips
+
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             if length:
@@ -345,6 +365,9 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT)
             path = urlsplit(self.path).path
             if path == "/api/reference":
                 self._new_reference()
+                return
+            if path == "/api/reset":
+                self._reset_valve()
                 return
             if path not in ("/api/sim/start", "/api/sim/stop"):
                 self._json(404, {"error": "not found"})
@@ -366,23 +389,49 @@ def make_server(console, sim, host, port, stop_event, pi_view_port=PI_VIEW_PORT)
                 sim.stop()
             self._json(200, {"running": sim.running()})
 
-        def _new_reference(self):
-            """The one thing the console sends the Pi: ask mirage_vision for a new reference frame."""
-            if not self._control_allowed():
-                self._json(403, {"error": "A new reference frame can only be requested from this Mac."})
-                return
+        def _post_to_pi(self, what, path):
+            """Forwards a button press to mirage_vision's web view on the Pi. Returns (pi, HTTP status,
+            body), or None after answering the page itself (refused, no Pi, or no answer)."""
+            if not self._pi_control_allowed():
+                self._json(403, {"error": f"{what} only works from this computer or an --allow-control device."})
+                return None
             pi = pi_address(console.snapshot(time.monotonic()))
             if not pi:
                 self._json(409, {"error": "No live telemetry from the Pi, so there's no Pi to ask."})
-                return
-            req = urllib.request.Request(f"http://{pi}:{pi_view_port}/reference", data=b"", method="POST")
+                return None
+            req = urllib.request.Request(f"http://{pi}:{pi_view_port}{path}", data=b"", method="POST")
             try:
                 with urllib.request.urlopen(req, timeout=3) as r:
-                    r.read()
+                    return pi, r.status, r.read().decode(errors="replace").strip()
+            except urllib.error.HTTPError as e:            # the Pi answered, with a refusal
+                return pi, e.code, e.read().decode(errors="replace").strip()
             except OSError as e:
                 self._json(502, {"error": f"mirage_vision on {pi}:{pi_view_port} didn't answer ({e})."})
-                return
-            self._json(200, {"pi": pi})
+                return None
+
+        def _new_reference(self):
+            """Ask mirage_vision for a new reference frame."""
+            answer = self._post_to_pi("A new reference frame", "/reference")
+            if answer:
+                pi, status, _ = answer
+                if status == 200:
+                    self._json(200, {"pi": pi})
+                else:
+                    self._json(502, {"error": f"mirage_vision on {pi} refused ({status})."})
+
+        def _reset_valve(self):
+            """Ask the supervisor, through mirage_vision, to reopen the valve. Its rules decide."""
+            answer = self._post_to_pi("Opening the valve", "/reset")
+            if answer:
+                pi, status, body = answer
+                if body == "accepted":
+                    self._json(200, {"pi": pi, "result": "accepted"})
+                elif body == "refused":
+                    self._json(409, {"pi": pi, "result": "refused",
+                                     "error": "The supervisor refused: gas is still in view, or vision isn't sending."})
+                else:
+                    self._json(502, {"pi": pi, "result": body or str(status),
+                                     "error": f"The supervisor on {pi} isn't reachable from mirage_vision."})
 
     return ThreadingHTTPServer((host, port), Handler)
 
@@ -419,6 +468,9 @@ def main():
     ap.add_argument("--no-browser", action="store_true", help="don't open the page automatically")
     ap.add_argument("--pi-view-port", type=int, default=PI_VIEW_PORT,
                     help="port of mirage_vision's browser view on the Pi (its -p)")
+    ap.add_argument("--allow-control", default="", metavar="IP[,IP...]",
+                    help="other devices (with --host 0.0.0.0) that may use New reference frame and "
+                         "Open valve; this computer always may")
     args = ap.parse_args()
 
     tel_sock, img_sock = bind_udp(TEL_PORT), bind_udp(IMG_PORT)
@@ -426,7 +478,8 @@ def main():
     for sock, size, handler in ((tel_sock, TEL_BUF, console.on_telemetry), (img_sock, IMG_BUF, console.on_image)):
         threading.Thread(target=receive, args=(sock, size, handler, stop), daemon=True).start()
     try:
-        httpd = make_server(console, sim, args.host, args.port, stop, args.pi_view_port)
+        httpd = make_server(console, sim, args.host, args.port, stop, args.pi_view_port,
+                            [ip.strip() for ip in args.allow_control.split(",") if ip.strip()])
     except OSError as e:
         raise SystemExit(f"Can't serve on {args.host}:{args.port} ({e.strerror}). Try --port {args.port + 1}.")
 

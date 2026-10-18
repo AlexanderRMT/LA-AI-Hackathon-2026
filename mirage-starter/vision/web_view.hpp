@@ -27,8 +27,10 @@ struct WebViewFrame {
 // Starts the server and render threads at `priority`. rotate180 turns the picture only, for a
 // camera mounted upside down; detection and region coordinates are unaffected. The page's
 // "New reference frame" button calls onNewReference from an HTTP thread, so it should only set
-// a flag for the camera thread.
-bool web_view_start(int port, int priority, bool rotate180, void (*onNewReference)());
+// a flag for the camera thread. Its "Open valve" button (POST /reset) calls onResetValve, which
+// asks the supervisor and returns 1 accepted, 0 refused, -1 not reachable.
+bool web_view_start(int port, int priority, bool rotate180, void (*onNewReference)(),
+                    int (*onResetValve)());
 
 // True while a browser is watching. Skip building frames otherwise.
 bool web_view_wanted();

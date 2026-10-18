@@ -302,6 +302,7 @@
     const showReset = Boolean(v.closed) && link.key !== "lost";
     $("reset-row").hidden = !showReset;
     $("reset-hint").hidden = !showReset;
+    $("open-btn").hidden = !(showReset && canControlPi());
     if (showReset) {
       setText($("reset-hint"), `Or press the reset button, if one is wired. The supervisor refuses a reset until it has seen ${snap.constants.reset_clear} clear verdicts in a row.`);
     }
@@ -447,9 +448,13 @@
     el.src = url;
   }
 
+  // The server says whether this viewer may use the Pi buttons (this computer or --allow-control)
+  function canControlPi() {
+    return Boolean(consoleUp && snap && snap.can_control && snap.pi_view && snap.pi_view.host);
+  }
+
   function renderRefButton(link) {
-    const btn = $("ref-btn");
-    btn.hidden = !(isLocalPage && consoleUp && snap && snap.pi_view && snap.pi_view.host);
+    $("ref-btn").hidden = !canControlPi();
   }
 
   function renderImage(s, link) {
@@ -790,18 +795,23 @@
     await simulator(snap.sim.running ? "stop" : "start");
     btn.removeAttribute("aria-busy");
   });
-  $("ref-btn").addEventListener("click", async () => {
-    const btn = $("ref-btn");
+  async function piButton(id, path, okText) {
+    const btn = $(id);
     btn.setAttribute("aria-busy", "true");
     try {
-      const r = await fetch("/api/reference", { method: "POST", headers: { "X-Mirage-Control": "1" } });
+      const r = await fetch(path, { method: "POST", headers: { "X-Mirage-Control": "1" } });
       const body = await r.json().catch(() => ({}));
-      note(r.ok ? `New reference frame taken on ${body.pi}.` : (body.error || `The console refused (${r.status}).`));
+      note(r.ok ? okText(body) : (body.error || `The console refused (${r.status}).`));
     } catch {
       note("The console didn’t answer.");
     }
     btn.removeAttribute("aria-busy");
-  });
+  }
+
+  $("ref-btn").addEventListener("click", () =>
+    piButton("ref-btn", "/api/reference", (b) => `New reference frame taken on ${b.pi}.`));
+  $("open-btn").addEventListener("click", () =>
+    piButton("open-btn", "/api/reset", () => "Valve open: the supervisor accepted the reset."));
   $("pause-btn").addEventListener("click", () => setPaused(!paused));
   for (const b of document.querySelectorAll(".segmented button")) b.addEventListener("click", () => setView(b.dataset.view));
 

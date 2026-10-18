@@ -164,3 +164,23 @@ cv::Mat mirage_shift_map(int width)
 {
     return g_engine ? g_engine->visual(width) : cv::Mat();
 }
+
+int mirage_request_reset()
+{
+    // Its own connection: g_client belongs to the camera thread
+    const int coid = name_open(MIRAGE_SUP_NAME, 0);
+    if (coid == -1) {
+        return -1;
+    }
+    mirage_cmd_t cmd;
+    std::memset(&cmd, 0, sizeof cmd);
+    cmd.type = MIRAGE_MSG_RESET;
+    mirage_status_t st;
+    std::memset(&st, 0, sizeof st);
+    const int rc = MsgSend(coid, &cmd, sizeof cmd, &st, sizeof st);
+    name_close(coid);
+    if (rc == -1) {
+        return -1;
+    }
+    return st.reset_ok ? 1 : 0;
+}

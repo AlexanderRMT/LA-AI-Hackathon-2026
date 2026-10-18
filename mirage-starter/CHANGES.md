@@ -133,3 +133,14 @@ about 100,000,000. `train.py` warns per clip when they don’t.
   Without `-m` nothing changed.
 - Tested on the Pi from a separate build: a missing file and a junk file both refuse to start with
   the reason; `export/model.tflite` loads in TFLite 2.21 (XNNPACK on the CPU).
+
+## Web console: Open valve, and Pi buttons from this computer's network address (Alex)
+
+- **Open valve** button in the valve card while it's closed: POST `/api/reset` → mirage_vision's
+  POST `/reset` on the Pi → `MIRAGE_MSG_RESET` to the supervisor, exactly like `mirage_ctl reset`.
+  The supervisor's rules still decide (refused while gas is in view or vision is silent). The Pi's
+  own page (`http://<pi>:8080/`) has the same button.
+- New reference frame and Open valve now work from this computer by any of its addresses (so
+  `http://<this computer's IP>:8750` too), and from devices named with `--allow-control IP[,IP]`.
+  The server tells each page whether it may (`can_control` in `/api/state`). The simulator buttons
+  keep the original loopback-only guard.

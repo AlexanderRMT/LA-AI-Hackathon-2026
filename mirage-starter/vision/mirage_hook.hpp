@@ -33,3 +33,7 @@ int mirage_valve_state(uint32_t* reason = nullptr);
 
 // Colour shift map of the dot screen region, width pixels wide. Call it from the camera thread.
 cv::Mat mirage_shift_map(int width);
+
+// Asks the supervisor to reopen the valve, exactly like `mirage_ctl reset`; its rules decide.
+// Safe from any thread (uses its own connection). 1 accepted, 0 refused, -1 not reachable.
+int mirage_request_reset();

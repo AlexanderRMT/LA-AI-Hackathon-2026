@@ -61,19 +61,25 @@ const char kIndexHtml[] =
     "<a href=\"/snapshot.jpg\" download=\"mirage.jpg\">save snapshot</a> &middot; "
     "<a href=\"/region\">region only</a>"
     "<button id=\"ref\" title=\"Clear the dot screen first: the next frame becomes the background\">"
-    "New reference frame</button> <span id=\"msg\"></span></div>"
+    "New reference frame</button>"
+    "<button id=\"open\" title=\"Asks the supervisor to reopen the valve, like mirage_ctl reset. "
+    "It refuses while gas is in view.\">Open valve</button> <span id=\"msg\"></span></div>"
     "<script>"
-    "document.getElementById('ref').onclick=function(){"
-    "var m=document.getElementById('msg');m.textContent='...';"
-    "fetch('/reference',{method:'POST'}).then(function(r){"
-    "m.textContent=r.ok?'new reference taken':'failed ('+r.status+')';})"
-    ".catch(function(){m.textContent='Pi not reachable';});};"
+    "function post(path,done){var m=document.getElementById('msg');m.textContent='...';"
+    "fetch(path,{method:'POST'}).then(function(r){return r.text().then(function(t){"
+    "m.textContent=done(r,t.trim());});}).catch(function(){m.textContent='Pi not reachable';});}"
+    "document.getElementById('ref').onclick=function(){post('/reference',function(r){"
+    "return r.ok?'new reference taken':'failed ('+r.status+')';});};"
+    "document.getElementById('open').onclick=function(){post('/reset',function(r,t){"
+    "return t==='accepted'?'valve open':t==='refused'?'refused: gas still in view':"
+    "'supervisor not reachable';});};"
     "</script></body></html>";
 
 struct State {
     int priority = 10;
     bool rotate = false;
     void (*onNewReference)() = nullptr;
+    int (*onResetValve)() = nullptr;
     std::atomic<int> viewers[kViews]{};
 
     // Latest frame from the camera thread
@@ -333,6 +339,14 @@ void serveClient(int fd)
         std::fflush(stdout);
         const char msg[] = "ok\n";
         sendResponse(fd, "200 OK", "text/plain", msg, sizeof(msg) - 1);
+    } else if (path == "POST /reset") {
+        // The supervisor decides: it refuses while gas is in view, as for mirage_ctl reset
+        const int r = g.onResetValve ? g.onResetValve() : -1;
+        const char* body = r > 0 ? "accepted\n" : (r == 0 ? "refused\n" : "unreachable\n");
+        std::printf("[web] valve reset requested from the browser: %s", body);
+        std::fflush(stdout);
+        sendResponse(fd, r > 0 ? "200 OK" : (r == 0 ? "409 Conflict" : "503 Service Unavailable"),
+                     "text/plain", body, std::strlen(body));
     } else if (!path.empty()) {
         const char msg[] = "Not found\n";
         sendResponse(fd, "404 Not Found", "text/plain", msg, sizeof(msg) - 1);
@@ -357,11 +371,13 @@ void acceptLoop(int listenFd)
 
 }  // namespace
 
-bool web_view_start(int port, int priority, bool rotate180, void (*onNewReference)())
+bool web_view_start(int port, int priority, bool rotate180, void (*onNewReference)(),
+                    int (*onResetValve)())
 {
     g.priority = priority;
     g.rotate = rotate180;
     g.onNewReference = onNewReference;
+    g.onResetValve = onResetValve;
     std::signal(SIGPIPE, SIG_IGN);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
