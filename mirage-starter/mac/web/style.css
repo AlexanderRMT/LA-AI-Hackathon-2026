@@ -173,6 +173,8 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .view { grid-area: view; }
 .history { grid-area: history; }
 .side { grid-area: side; display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+/* The valve and verdict cards share the column's height, so it ends level with the chart */
+.side > .valve, .side > .verdict { flex: 1 1 auto; }
 
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .panel-head {
