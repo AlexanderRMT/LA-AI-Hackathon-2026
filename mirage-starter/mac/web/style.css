@@ -1,27 +1,30 @@
-/* Mirage console. Dark, quiet surfaces; color is reserved for state. */
+/* Mirage console. Dark, quiet surfaces; color is reserved for state.
+   Tokens follow IBM Carbon's Gray 100 theme: IBM Plex, square corners, flat layers. */
 :root {
   color-scheme: dark;
-  --bg: #0b0c0e;
-  --panel: #111317;
-  --raised: #181b20;
-  --well: #08090b;
-  --line: #20242a;
-  --line-strong: #2d3239;
-  --ink: #e8eaed;
-  --ink-2: #a9afb7;
-  --ink-3: #868d96;
-  --accent: #7aa7ff;
-  --ok: #45c07c;
-  --warn: #e3a33b;
-  --serious: #f08a4b;
-  --alarm: #f3585b;
-  --sim: #a68bfa;
-  --unknown: #8c939c;
+  --bg: #161616;           /* background */
+  --panel: #262626;        /* layer-01 */
+  --raised: #393939;       /* layer-02 */
+  --raised-hover: #4c4c4c; /* layer-hover-02 */
+  --well: #161616;
+  --line: #393939;         /* border-subtle */
+  --line-strong: #6f6f6f;  /* border-strong */
+  --ink: #f4f4f4;          /* text-primary */
+  --ink-2: #c6c6c6;        /* text-secondary */
+  --ink-3: #a8a8a8;        /* text-helper */
+  --accent: #78a9ff;       /* link-primary */
+  --focus: #ffffff;
+  --ok: #42be65;
+  --warn: #f1c21b;
+  --serious: #ff832b;
+  --alarm: #fa4d56;
+  --sim: #a56eff;
+  --unknown: #8d8d8d;
   --tone: var(--unknown);
-  --radius: 8px;
-  --radius-sm: 6px;
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 0;
+  --radius-sm: 0;
+  --font: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   font-size: clamp(12.5px, 0.4vw + 7.4px, 16px);
 }
 
@@ -42,13 +45,13 @@ button { font: inherit; color: inherit; }
 code, .mono { font-family: var(--mono); font-size: 0.9em; }
 code {
   padding: 0.08em 0.38em;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border: 0;
+  border-radius: 0;
   background: var(--raised);
   color: var(--ink);
   white-space: nowrap;
 }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 [hidden] { display: none !important; }
 .symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
 .sr-only {
@@ -65,19 +68,19 @@ code {
 /* ---------------------------------------------------------------- controls */
 .btn {
   display: inline-flex; align-items: center; gap: 0.45rem;
-  height: 2.2rem; padding: 0 0.85rem;
-  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  height: 2.2rem; padding: 0 1rem;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
   background: var(--raised); color: var(--ink);
-  font-size: 0.95rem; font-weight: 500; line-height: 1; white-space: nowrap;
+  font-size: 0.95rem; font-weight: 400; line-height: 1; white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition: background-color 0.11s cubic-bezier(0.2, 0, 0.38, 0.9);
 }
-.btn:hover { background: #1f2329; border-color: #3a4049; }
+.btn:hover { background: var(--raised-hover); }
 .btn[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; background: transparent; opacity: 0.6; }
 .btn[aria-busy="true"] { opacity: 0.6; }
 .btn-sm { height: 1.95rem; padding: 0 0.65rem; font-size: 0.9rem; }
-.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
-.btn-ghost:hover { background: var(--raised); border-color: var(--line-strong); color: var(--ink); }
+.btn-ghost { background: transparent; color: var(--accent); }
+.btn-ghost:hover { background: var(--raised); color: var(--ink); }
 .btn .icon { width: 1em; height: 1em; }
 
 .segmented {
@@ -87,7 +90,7 @@ code {
 }
 .segmented button {
   height: calc(1.95rem - 6px); min-width: 3.6rem; padding: 0 0.7rem;
-  border: 0; border-radius: 4px; background: transparent;
+  border: 0; border-radius: 0; background: transparent;
   color: var(--ink-2); font-size: 0.9rem; font-weight: 500; cursor: pointer;
 }
 .segmented button:hover { color: var(--ink); }
@@ -96,7 +99,7 @@ code {
 .tag {
   display: inline-flex; align-items: center; gap: 0.4rem;
   height: 1.55rem; padding: 0 0.5rem;
-  border: 1px solid var(--line-strong); border-radius: 4px;
+  border: 1px solid var(--line-strong); border-radius: 1rem;
   background: rgb(11 12 14 / 0.86);
   color: var(--ink); font-size: 0.82rem; font-weight: 500; white-space: nowrap;
 }
@@ -262,8 +265,8 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .class-icon[data-class="clear"] { color: var(--ok); }
 .class-name { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
 .metric-top { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-.meter { position: relative; height: 0.5rem; margin: 0.5rem 0 0.45rem; border-radius: 3px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.meter-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: var(--accent); }
+.meter { position: relative; height: 0.5rem; margin: 0.5rem 0 0.45rem; border-radius: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.meter-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 0; background: var(--accent); }
 .meter-fill.is-gas { background: var(--alarm); }
 .meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
 
@@ -278,7 +281,7 @@ body[data-lost="1"] .layout { opacity: 0.5; }
 .stat { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; padding: 0.8rem 1rem 0.9rem; background: var(--panel); }
 .stat .value { font-size: 1.4rem; }
 .sub { overflow: hidden; color: var(--ink-3); font-size: 0.84rem; white-space: nowrap; text-overflow: ellipsis; }
-.bar { display: block; height: 3px; margin: 0.25rem 0 0.1rem; overflow: hidden; border-radius: 2px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.bar { display: block; height: 3px; margin: 0.25rem 0 0.1rem; overflow: hidden; border-radius: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .bar span { display: block; width: 0; height: 100%; background: var(--accent); }
 .bar span.is-over { background: var(--alarm); }
 
@@ -350,7 +353,7 @@ td .key { margin-right: 0.45rem; vertical-align: middle; }
 .keys { display: inline-flex; align-items: center; gap: 0.35rem; }
 kbd {
   min-width: 1.35rem; padding: 0.05rem 0.35rem;
-  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px;
+  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 0;
   background: var(--raised); color: var(--ink-2);
   font: 500 0.78rem var(--mono); text-align: center;
 }
