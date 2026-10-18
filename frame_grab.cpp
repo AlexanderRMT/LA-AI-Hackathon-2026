@@ -7,12 +7,13 @@
  * Based on camera_example1_callback (Apache-2.0, BlackBerry Limited).
  *
  * Usage:
- *   frame_grab [-u unit] [-o path] [-r height] [-w warmup_frames] [-i interval_ms]
+ *   frame_grab [-u unit] [-o path] [-r height] [-R] [-w warmup_frames] [-i interval_ms]
  *
  *   -u  camera unit (default 4 = Pi Camera Module 3 in the Pi 5's second port;
  *       3 = first port, 1 = test pattern)
  *   -o  output file (default /tmp/frame.bmp)
  *   -r  output height, aspect ratio kept (default 480: 854x480; 0 = full size)
+ *   -R  rotate the picture 180 degrees (camera mounted upside down)
  *   -w  frames to skip so auto-exposure can settle (default 30)
  *   -i  keep running and overwrite the file every N ms (default 0 = one shot)
  */
@@ -39,6 +40,7 @@ struct GrabState {
     std::condition_variable cv;
     int framesToSkip = 0;
     uint32_t outHeight = kDefaultHeight;
+    bool rotate180 = false;
     bool wantFrame = true;
     bool haveFrame = false;
     bool unsupported = false;
@@ -110,7 +112,7 @@ void onFrame(camera_handle_t handle, camera_buffer_t* buffer, void* arg)
     if (!state->wantFrame) {
         return;
     }
-    if (!convertToRgb(buffer, state->frame, state->outHeight)) {
+    if (!convertToRgb(buffer, state->frame, state->outHeight, state->rotate180)) {
         state->unsupported = true;
         state->badType = buffer->frametype;
     }
@@ -137,19 +139,21 @@ int main(int argc, char* argv[])
     camera_unit_t unit = static_cast<camera_unit_t>(4);
     std::string outPath = "/tmp/frame.bmp";
     long outHeight = kDefaultHeight;
+    bool rotate180 = false;
     long warmup = 30;
     long intervalMs = 0;
 
     int opt;
-    while ((opt = getopt(argc, argv, "u:o:r:w:i:h")) != -1) {
+    while ((opt = getopt(argc, argv, "u:o:r:Rw:i:h")) != -1) {
         switch (opt) {
         case 'u': unit = static_cast<camera_unit_t>(parseLong(optarg, "unit")); break;
         case 'o': outPath = optarg; break;
         case 'r': outHeight = parseLong(optarg, "height"); break;
+        case 'R': rotate180 = true; break;
         case 'w': warmup = parseLong(optarg, "warmup"); break;
         case 'i': intervalMs = parseLong(optarg, "interval"); break;
         default:
-            std::printf("Usage: %s [-u unit] [-o path] [-r height] [-w warmup_frames] [-i interval_ms]\n", argv[0]);
+            std::printf("Usage: %s [-u unit] [-o path] [-r height] [-R] [-w warmup_frames] [-i interval_ms]\n", argv[0]);
             return (opt == 'h') ? EXIT_SUCCESS : EXIT_FAILURE;
         }
     }
@@ -173,6 +177,7 @@ int main(int argc, char* argv[])
 
     GrabState state;
     state.outHeight = static_cast<uint32_t>(outHeight);
+    state.rotate180 = rotate180;
     state.framesToSkip = static_cast<int>(warmup);
 
     err = camera_start_viewfinder(handle, onFrame, nullptr, &state);

@@ -7,6 +7,7 @@
 
 #include "camera_frame.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 
@@ -51,18 +52,22 @@ void scaledSize(uint32_t srcW, uint32_t srcH, uint32_t outHeight, uint32_t& w, u
 }
 
 // Nearest-neighbour source index for each of n output samples spanning src,
-// sampling at sample centres (identity when n == src)
-void sampleMap(uint32_t n, uint32_t src, std::vector<uint32_t>& map)
+// sampling at sample centres (identity when n == src). Reversed, the output
+// runs back to front, so reversing both axes rotates the picture 180 degrees.
+void sampleMap(uint32_t n, uint32_t src, std::vector<uint32_t>& map, bool reversed)
 {
     map.resize(n);
     for (uint32_t i = 0; i < n; i++) {
         map[i] = static_cast<uint32_t>((2u * static_cast<uint64_t>(i) + 1u) * src / (2u * static_cast<uint64_t>(n)));
     }
+    if (reversed) {
+        std::reverse(map.begin(), map.end());
+    }
 }
 
 }  // namespace
 
-bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight)
+bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight, bool rotate180)
 {
     const uint8_t* base = buffer->framebuf;
 
@@ -104,8 +109,8 @@ bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight)
     scaledSize(srcW, srcH, outHeight, w, h);
     thread_local std::vector<uint32_t> xs;
     thread_local std::vector<uint32_t> ys;
-    sampleMap(w, srcW, xs);
-    sampleMap(h, srcH, ys);
+    sampleMap(w, srcW, xs, rotate180);
+    sampleMap(h, srcH, ys, rotate180);
     out.width = w;
     out.height = h;
     out.rgb.resize(static_cast<size_t>(w) * h * 3u);
@@ -171,11 +176,11 @@ bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight)
     }
 }
 
-bool convertToYuv420(const camera_buffer_t* buffer, Yuv420Image& out, uint32_t outHeight)
+bool convertToYuv420(const camera_buffer_t* buffer, Yuv420Image& out, uint32_t outHeight, bool rotate180)
 {
     if (buffer->frametype != CAMERA_FRAMETYPE_NV12) {
         thread_local Frame rgb;
-        if (!convertToRgb(buffer, rgb, outHeight)) {
+        if (!convertToRgb(buffer, rgb, outHeight, rotate180)) {
             return false;
         }
         rgbToYuv420(rgb.rgb.data(), rgb.width, rgb.height, out);
@@ -206,8 +211,8 @@ bool convertToYuv420(const camera_buffer_t* buffer, Yuv420Image& out, uint32_t o
     out.resize(w, h);
     thread_local std::vector<uint32_t> xs;
     thread_local std::vector<uint32_t> ys;
-    sampleMap(w, d.width, xs);
-    sampleMap(h, d.height, ys);
+    sampleMap(w, d.width, xs, rotate180);
+    sampleMap(h, d.height, ys, rotate180);
     const uint8_t* base = buffer->framebuf;
 
     for (uint32_t y = 0; y < h; y++) {

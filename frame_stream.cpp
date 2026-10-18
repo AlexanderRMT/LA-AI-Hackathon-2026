@@ -5,12 +5,13 @@
  *        can be watched live in a laptop browser.
  *
  * Usage:
- *   frame_stream [-u unit] [-p port] [-r height] [-q quality] [-f max_fps] [-j threads]
+ *   frame_stream [-u unit] [-p port] [-r height] [-R] [-q quality] [-f max_fps] [-j threads]
  *
  *   -u  camera unit (default 4 = Pi Camera Module 3 in the Pi 5's second port;
  *       3 = first port, 1 = test pattern)
  *   -p  HTTP port (default 8080)
  *   -r  output height, aspect ratio kept (default 480: 854x480; 0 = full size)
+ *   -R  rotate the picture 180 degrees (camera mounted upside down)
  *   -q  JPEG quality 1-100 (default 75)
  *   -f  max frames per second to encode (default 30, the camera's rate)
  *   -j  JPEG encoder threads (default 3: as fast as 4 on a Pi 5, leaves a core free)
@@ -90,6 +91,7 @@ struct JpegSlot {
 
 struct StreamState {
     uint32_t outHeight = kDefaultHeight;
+    bool rotate180 = false;
     Clock::duration minInterval{};
     std::atomic<int> viewers{0};
     std::atomic<bool> warnedUnsupported{false};
@@ -122,7 +124,7 @@ void onFrame(camera_handle_t handle, camera_buffer_t* buffer, void* arg)
         s->nextDue = now;   // fell behind (e.g. first viewer after idle); don't burst
     }
 
-    if (!convertToYuv420(buffer, s->spare, s->outHeight)) {
+    if (!convertToYuv420(buffer, s->spare, s->outHeight, s->rotate180)) {
         if (!s->warnedUnsupported.exchange(true)) {
             std::printf("\nUnsupported frametype %d\n", (int)buffer->frametype);
         }
@@ -379,21 +381,23 @@ int main(int argc, char* argv[])
     camera_unit_t unit = static_cast<camera_unit_t>(4);
     int port = 8080;
     long outHeight = kDefaultHeight;
+    bool rotate180 = false;
     long quality = 75;
     long fps = 30;
     long threads = 3;
 
     int opt;
-    while ((opt = getopt(argc, argv, "u:p:r:q:f:j:h")) != -1) {
+    while ((opt = getopt(argc, argv, "u:p:r:Rq:f:j:h")) != -1) {
         switch (opt) {
         case 'u': unit = static_cast<camera_unit_t>(parseLong(optarg, "unit", 1, CAMERA_UNIT_NUM_UNITS - 1)); break;
         case 'p': port = static_cast<int>(parseLong(optarg, "port", 1, 65535)); break;
         case 'r': outHeight = parseLong(optarg, "height", 0, 4096); break;
+        case 'R': rotate180 = true; break;
         case 'q': quality = parseLong(optarg, "quality", 1, 100); break;
         case 'f': fps = parseLong(optarg, "fps", 1, 120); break;
         case 'j': threads = parseLong(optarg, "threads", 1, 16); break;
         default:
-            std::printf("Usage: %s [-u unit] [-p port] [-r height] [-q quality] [-f max_fps] [-j threads]\n", argv[0]);
+            std::printf("Usage: %s [-u unit] [-p port] [-r height] [-R] [-q quality] [-f max_fps] [-j threads]\n", argv[0]);
             return (opt == 'h') ? EXIT_SUCCESS : EXIT_FAILURE;
         }
     }
@@ -438,6 +442,7 @@ int main(int argc, char* argv[])
 
     static StreamState state;   // outlives detached client threads during shutdown
     state.outHeight = static_cast<uint32_t>(outHeight);
+    state.rotate180 = rotate180;
     state.minInterval = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / fps));
 
     std::thread encoder(encodeLoop, &state, static_cast<int>(quality), static_cast<unsigned>(threads));

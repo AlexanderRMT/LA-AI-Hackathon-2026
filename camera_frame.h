@@ -27,22 +27,25 @@ constexpr uint32_t kDefaultHeight = 480;
  * @brief Converts a camera buffer to packed RGB24, downscaled (nearest
  *        neighbour) to @p outHeight rows with the aspect ratio kept and the
  *        width rounded to even, e.g. 1536x864 -> 854x480. 0, or a height at or
- *        above the source's, keeps the full size.
+ *        above the source's, keeps the full size. @p rotate180 turns the
+ *        picture upside down, for a camera mounted that way.
  *
  * Only valid inside the viewfinder callback, while @p buffer is still owned by
  * the caller. Returns false for frametypes it can't convert.
  */
-bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight = 0);
+bool convertToRgb(const camera_buffer_t* buffer, Frame& out, uint32_t outHeight = 0,
+                  bool rotate180 = false);
 
 /**
  * @brief Converts a camera buffer to full-range YCbCr 4:2:0 for JPEG encoding,
- *        downscaled to @p outHeight rows like convertToRgb().
+ *        downscaled to @p outHeight rows and rotated like convertToRgb().
  *
  * NV12 (the Pi camera's default) is copied plane by plane with no colour
  * conversion; other frametypes go through RGB. Same validity rules as
  * convertToRgb().
  */
-bool convertToYuv420(const camera_buffer_t* buffer, Yuv420Image& out, uint32_t outHeight = 0);
+bool convertToYuv420(const camera_buffer_t* buffer, Yuv420Image& out, uint32_t outHeight = 0,
+                     bool rotate180 = false);
 
 /**
  * @brief Switches the viewfinder to a frametype convertToRgb() handles, if it
