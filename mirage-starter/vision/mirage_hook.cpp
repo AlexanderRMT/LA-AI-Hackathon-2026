@@ -5,6 +5,7 @@
 // whole loop to the supervisor can be tested from the first hour.
 #include "mirage_hook.hpp"
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -25,6 +26,8 @@ static BosEngine* g_engine = nullptr;
 static VerdictClient g_client;
 static int g_thumb_sock = -1;
 static sockaddr_in g_thumb_dst;
+static bool g_thumb_warned = false;             // report a failed thumbnail send once
+static const size_t kMaxThumbBytes = 9216;      // QNX default net.inet.udp.maxdgram
 static const float kPhysicsGasPx = 0.30f;      // fallback rule before the model exists
 static int g_link = -1;                         // supervisor reachable? -1 until the first verdict
 static mirage_status_t g_status;                // supervisor's reply to the last verdict
@@ -110,11 +113,23 @@ bool mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns, mirage_verdict_t* 
     }
 
     if (g_thumb_sock != -1) {
+        // QNX refuses UDP datagrams over net.inet.udp.maxdgram (9216 bytes by default), so step
+        // the quality down until the thumbnail fits rather than sending nothing
+        const cv::Mat img = g_engine->visual(360);
         std::vector<uchar> jpg;
-        cv::imencode(".jpg", g_engine->visual(360), jpg, {cv::IMWRITE_JPEG_QUALITY, 70});
-        if (jpg.size() < 60000) {
-            sendto(g_thumb_sock, jpg.data(), jpg.size(), 0,
-                   reinterpret_cast<sockaddr*>(&g_thumb_dst), sizeof g_thumb_dst);
+        for (int quality : {70, 50, 35, 20}) {
+            cv::imencode(".jpg", img, jpg, {cv::IMWRITE_JPEG_QUALITY, quality});
+            if (jpg.size() <= kMaxThumbBytes) {
+                break;
+            }
+        }
+        const bool sent = jpg.size() <= kMaxThumbBytes &&
+                          sendto(g_thumb_sock, jpg.data(), jpg.size(), 0,
+                                 reinterpret_cast<sockaddr*>(&g_thumb_dst), sizeof g_thumb_dst) != -1;
+        if (!sent && !g_thumb_warned) {
+            std::fprintf(stderr, "[vision] shift-map thumbnail not sent (%zu bytes): %s\n", jpg.size(),
+                         jpg.size() > kMaxThumbBytes ? "too big for one UDP datagram" : std::strerror(errno));
+            g_thumb_warned = true;
         }
     }
     if (verdict) {
