@@ -1,9 +1,11 @@
-// mirage_hook.cpp: drop-in glue for the QNX AI workshop's camera callback.   owner: Jaime
+// mirage_hook.cpp: glue between the camera callback and the BOS engine.     owner: Jaime
 //
-// The workshop already turns Sensor Framework frames into cv::Mat. Call mirage_init() once,
-// then mirage_on_frame() from that callback in place of the palm and hand-landmark models.
+// mirage_vision.cpp calls mirage_init() once, then mirage_on_frame() for every camera frame.
 // Until Gio's model arrives it uses a physics-only rule (a big shift counts as gas), so the
 // whole loop to the supervisor can be tested from the first hour.
+#include "mirage_hook.hpp"
+
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <vector>
@@ -24,6 +26,7 @@ static VerdictClient g_client;
 static int g_thumb_sock = -1;
 static sockaddr_in g_thumb_dst;
 static const float kPhysicsGasPx = 0.30f;      // fallback rule before the model exists
+static int g_link = -1;                         // supervisor reachable? -1 until the first verdict
 
 static uint64_t mono_ns()
 {
@@ -32,7 +35,6 @@ static uint64_t mono_ns()
     return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<uint64_t>(ts.tv_nsec);
 }
 
-// screen_roi: where the dot screen sits in the frame. model_path / dump_dir / dashboard_ip may be null.
 void mirage_init(const cv::Rect& screen_roi, const char* model_path, const char* dump_dir,
                  const char* dashboard_ip)
 {
@@ -63,11 +65,10 @@ void mirage_reset_reference()
     }
 }
 
-// frame: whatever the workshop callback has (gray, BGR, or BGRA). frame_ns: its timestamp, or 0.
-void mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns)
+bool mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns, mirage_verdict_t* verdict)
 {
     if (!g_engine) {
-        return;
+        return false;
     }
     cv::Mat gray;
     if (frame.channels() == 3) {
@@ -79,7 +80,7 @@ void mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns)
     }
     BosResult r;
     if (!g_engine->process(gray, frame_ns ? frame_ns : mono_ns(), r)) {
-        return;
+        return false;
     }
     mirage_verdict_t v;
     std::memset(&v, 0, sizeof v);
@@ -97,7 +98,12 @@ void mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns)
     }
     v.sent_ns = mono_ns();
     mirage_status_t st;
-    g_client.send(v, &st);
+    const int link = g_client.send(v, &st) ? 1 : 0;
+    if (link != g_link) {                       // report changes, not every verdict
+        std::fprintf(stderr, link ? "[vision] connected to the supervisor\n"
+                                  : "[vision] supervisor not reachable, verdicts are dropped\n");
+        g_link = link;
+    }
 
     if (g_thumb_sock != -1) {
         std::vector<uchar> jpg;
@@ -107,4 +113,8 @@ void mirage_on_frame(const cv::Mat& frame, uint64_t frame_ns)
                    reinterpret_cast<sockaddr*>(&g_thumb_dst), sizeof g_thumb_dst);
         }
     }
+    if (verdict) {
+        *verdict = v;
+    }
+    return true;
 }

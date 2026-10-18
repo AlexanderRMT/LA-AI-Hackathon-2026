@@ -15,10 +15,9 @@
 #include <opencv2/core.hpp>
 #include <opencv2/video/tracking.hpp>
 
-namespace tflite {
-class FlatBufferModel;
-class Interpreter;
-}
+// TFLite model and interpreter. Defined in bos_engine.cpp: TFLite's class names are aliases,
+// which can't be forward-declared here.
+struct BosModel;
 
 struct BosParams {
     cv::Rect roi;               // dot screen region in the camera frame; empty means the whole frame
@@ -46,7 +45,7 @@ public:
     ~BosEngine();
 
     bool loadModel(const std::string& tflite_path, int threads = 2);
-    bool hasModel() const { return static_cast<bool>(interp_); }
+    bool hasModel() const { return static_cast<bool>(model_); }
     void resetReference() { want_ref_ = true; }
 
     // gray: 8-bit single-channel full frame. Returns true when it produced a new result.
@@ -67,9 +66,8 @@ private:
     std::deque<cv::Mat> history_;           // grid x grid CV_32FC2, oldest first
     cv::Size roi_size_;
     bool want_ref_ = true;
-    uint64_t last_proc_ns_ = 0;
-    std::unique_ptr<tflite::FlatBufferModel> model_;
-    std::unique_ptr<tflite::Interpreter> interp_;
+    uint64_t next_proc_ns_ = 0;
+    std::unique_ptr<BosModel> model_;       // null until a model loads and matches BosParams
     FILE* dump_fields_ = nullptr;
     FILE* dump_meta_ = nullptr;
     uint64_t dump_idx_ = 0;

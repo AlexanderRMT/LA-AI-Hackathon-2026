@@ -7,9 +7,16 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include "flatbuffers_version_shim.hpp"   // before any TFLite header
 #include "tensorflow/lite/interpreter.h"
+#include "tensorflow/lite/interpreter_builder.h"
 #include "tensorflow/lite/kernels/register.h"
-#include "tensorflow/lite/model.h"
+#include "tensorflow/lite/model_builder.h"
+
+struct BosModel {
+    std::unique_ptr<tflite::FlatBufferModel> model;   // declared first so it outlives the interpreter
+    std::unique_ptr<tflite::Interpreter> interp;
+};
 
 BosEngine::BosEngine(const BosParams& p) : p_(p)
 {
@@ -23,31 +30,31 @@ BosEngine::~BosEngine()
 
 bool BosEngine::loadModel(const std::string& path, int threads)
 {
-    model_ = tflite::FlatBufferModel::BuildFromFile(path.c_str());
-    if (!model_) {
+    auto m = std::make_unique<BosModel>();
+    m->model = tflite::FlatBufferModel::BuildFromFile(path.c_str());
+    if (!m->model) {
         std::fprintf(stderr, "[bos] could not load %s\n", path.c_str());
         return false;
     }
     tflite::ops::builtin::BuiltinOpResolver resolver;
-    tflite::InterpreterBuilder(*model_, resolver)(&interp_);
-    if (!interp_) {
+    tflite::InterpreterBuilder(*m->model, resolver)(&m->interp);
+    if (!m->interp) {
         std::fprintf(stderr, "[bos] interpreter build failed (op version too new for this TFLite?)\n");
         return false;
     }
-    interp_->SetNumThreads(threads);
-    if (interp_->AllocateTensors() != kTfLiteOk) {
+    m->interp->SetNumThreads(threads);
+    if (m->interp->AllocateTensors() != kTfLiteOk) {
         std::fprintf(stderr, "[bos] AllocateTensors failed\n");
-        interp_.reset();
         return false;
     }
-    const TfLiteTensor* in = interp_->input_tensor(0);
+    const TfLiteTensor* in = m->interp->input_tensor(0);
     if (in->type != kTfLiteFloat32 || in->dims->size != 4 || in->dims->data[1] != p_.grid ||
         in->dims->data[2] != p_.grid || in->dims->data[3] != 2 * p_.stack) {
         std::fprintf(stderr, "[bos] model input does not match BosParams (want float32 1x%dx%dx%d)\n",
                      p_.grid, p_.grid, 2 * p_.stack);
-        interp_.reset();
         return false;
     }
+    model_ = std::move(m);
     std::fprintf(stderr, "[bos] model loaded: %s\n", path.c_str());
     return true;
 }
@@ -65,10 +72,11 @@ static float median_of(std::vector<float>& v)
 bool BosEngine::process(const cv::Mat& gray_full, uint64_t frame_ns, BosResult& out)
 {
     const uint64_t period_ns = static_cast<uint64_t>(1e9 / p_.proc_hz);
-    if (!want_ref_ && last_proc_ns_ && frame_ns - last_proc_ns_ < period_ns) {
+    if (!want_ref_ && next_proc_ns_ && frame_ns + period_ns / 5 < next_proc_ns_) {
         return false;                                   // keep the processing rate fixed
     }
-    last_proc_ns_ = frame_ns;
+    next_proc_ns_ = (next_proc_ns_ && frame_ns < next_proc_ns_ + period_ns) ? next_proc_ns_ + period_ns
+                                                                            : frame_ns + period_ns;
 
     const cv::Mat gray = p_.roi.area() > 0 ? gray_full(p_.roi) : gray_full;
     if (want_ref_ || ref_.empty() || ref_.size() != gray.size()) {
@@ -130,8 +138,9 @@ bool BosEngine::process(const cv::Mat& gray_full, uint64_t frame_ns, BosResult& 
     }
 
     out.have_model_output = false;
-    if (interp_ && static_cast<int>(history_.size()) == p_.stack) {
-        float* in = interp_->typed_input_tensor<float>(0);
+    if (model_ && static_cast<int>(history_.size()) == p_.stack) {
+        tflite::Interpreter& interp = *model_->interp;
+        float* in = interp.typed_input_tensor<float>(0);
         const int G = p_.grid, C = 2 * p_.stack;
         for (int s = 0; s < p_.stack; s++) {
             const cv::Mat& f = history_[static_cast<size_t>(s)];
@@ -144,8 +153,8 @@ bool BosEngine::process(const cv::Mat& gray_full, uint64_t frame_ns, BosResult& 
                 }
             }
         }
-        if (interp_->Invoke() == kTfLiteOk) {
-            const float* o = interp_->typed_output_tensor<float>(0);
+        if (interp.Invoke() == kTfLiteOk) {
+            const float* o = interp.typed_output_tensor<float>(0);
             int best = 0;
             for (int i = 0; i < 4; i++) {
                 out.probs[i] = o[i];

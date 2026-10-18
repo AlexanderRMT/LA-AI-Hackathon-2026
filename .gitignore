@@ -1,6 +1,7 @@
 # Build outputs
 frame_grab
 frame_stream
+mirage_vision
 *.o
 
 # Pulled frames

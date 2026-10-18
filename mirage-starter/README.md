@@ -11,8 +11,8 @@ https://claude.ai/artifact/Lzb7oH76Uhe4io8HfREiKL
  (a laptop)     │   BOS engine: DIS flow, bump removal, 64×64 field → TFLite model         │
                 │        │ one verdict every 100 ms over QNX message passing                │
                 │        ▼                                                                  │
-                │   supervisor (priority 50, SCHED_FIFO) → relay → normally-closed valve   │
-                │        LEDs, buzzer, reset button                                         │
+                │   supervisor (priority 50, SCHED_FIFO) → valve LED (stands in for valve) │
+                │        status LEDs; buzzer and reset button optional                      │
                 └────────┬──────────────────────────────────────────────────────────────────┘
                          │ UDP 5005 telemetry (JSON), UDP 5006 shift-map thumbnails (JPEG)
                          ▼
@@ -58,8 +58,8 @@ when you start.
 |-----------------|---------------------------------------------|---------------------------------------------|-------------------------------------------|
 | Hour 0 to 1     | Boot QNX, clone `qnx/QNX-AI-workshop`, camera running | Supervisor + mock_vision on the VM           | Kill test in `bos_proto.py`; get props    |
 | **Checkpoint 1**| All three report: frames on the Pi, IPC working, plume visible on the Mac |  |  |
-| Hour 1 to 3     | `mirage_hook.cpp` in the workshop app, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire relay, LEDs, buzzer, button; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
-| **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → relay clicks |  |  |
+| Hour 1 to 3     | `mirage_vision` on Alex’s camera code, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the three LEDs; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
+| **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → valve LED goes off |  |  |
 | Hour 3 to 4     | Recording session, all three, on the final rig (protocol below) |  |  |
 | Hour 4 to 7     | Load model v1, measure CPU time per frame   | Latency logging, run_mirage.sh, false-trip runs | Train v1, then v2 on Pi dumps; dashboard polish |
 | **Checkpoint 3**| Model in the loop, dashboard live           |                                             |                                           |
@@ -78,8 +78,9 @@ the gas or heat source about halfway. Reset the reference after any bump.
 | `motion_`     | Hand waving in front, walking past, light table bumps                |
 | `clear_`      | Nothing in front, normal room activity                               |
 
-On the Pi: `mkdir -p /data/home/qnxuser/rec/gas_lighter_01`, start the vision app with that dump dir,
-then on the Mac: `scp -r qnxuser@qnxpi.local:/data/home/qnxuser/rec ./pi_dumps`.
+On the Pi: `mkdir -p /data/home/qnxuser/rec/gas_lighter_01`, start `mirage_vision -d` with that folder
+(one folder per clip: starting again on the same folder overwrites it), then on the Mac:
+`scp -r qnxuser@qnxpi.local:/data/home/qnxuser/rec ./pi_dumps`.
 Quiet frames inside an active clip are relabeled clear automatically by `train.py`.
 
 ## Commands
@@ -91,8 +92,9 @@ qcc -Vgcc_ntox86_64 -O2 -o mock_vision supervisor/mock_vision.c
 ./supervisor &          # boots CLOSED
 ./mock_vision           # c clear, g gas, s stall, x reset
 ```
-Then for the Pi (run as root; if `<sys/rpi_gpio.h>` is missing on the host, copy it from the
-QNX hardware samples repo’s `common/` folder):
+Then for the Pi (run as root, e.g. with `sudo`; if `<sys/rpi_gpio.h>` is missing on the host, copy
+`common/system/gpio/sys/rpi_gpio.h` from https://gitlab.com/qnx/projects/hardware-component-samples
+into `$QNX_TARGET/usr/include/sys/`; it is QNX-licensed, so don't commit it here):
 ```sh
 qcc -Vgcc_ntoaarch64le -O2 -o supervisor supervisor/supervisor.c -lsocket
 qcc -Vgcc_ntoaarch64le -O2 -o mirage_ctl tools/mirage_ctl.c
@@ -101,15 +103,19 @@ scp supervisor mirage_ctl cpu_hog tools/run_mirage.sh qnxuser@qnxpi.local:/data/
 ```
 On the Pi, check `ls /dev/gpio` first. The supervisor drives outputs through `/dev/gpio/msg`.
 
-**Jaime**
-1. Clone `qnx/QNX-AI-workshop`, run its `configure.sh`, and get the hand demo showing the camera.
-   On image 8.0.5 or newer the README says which camera unit to pass.
-2. Add `vision/bos_engine.cpp` and `vision/mirage_hook.cpp` to its build. Call
-   `mirage_init(roi, model_path, dump_dir, dashboard_ip)` once and `mirage_on_frame(frame, ts)` from
-   the camera callback in place of the hand models.
-3. Find the ROI by saving one frame and measuring where the dot screen sits.
-4. Run it at priority 20 (`on -p 20 ./app`) or through `tools/run_mirage.sh`.
-5. If `cv::DISOpticalFlow` is missing from the Pi’s OpenCV build, swap in
+**Jaime** (`vision/mirage_vision.cpp` runs the pipeline on Alex’s camera code)
+1. On the Pi, from the repo root, install the libraries the workshop’s `configure.sh` would (minus
+   its GUI and ROS) and build:
+   ```sh
+   sudo apk add opencv-dev tflite-runtime tflite-runtime-dev flatbuffers-dev qnx-sf-base-dev
+   make mirage_vision CXX=clang++ EXTRA_CXXFLAGS=-I.
+   ```
+2. Find the ROI: run `./mirage_vision`, then `.\pull_frame.ps1` on Windows. It saves the exact frame
+   the engine processes; read the dot screen’s top-left corner, width and height in Paint.
+3. Run it at priority 20 with the ROI: `on -p 20 ./mirage_vision -s x,y,w,h -i <mac ip>`, or through
+   `tools/run_mirage.sh`. Add `-m model.tflite` once Gio’s model arrives and `-d <folder>` to record.
+   After a bump, `slay -s SIGUSR1 mirage_vision` takes a new reference frame.
+4. If `cv::DISOpticalFlow` is missing from the Pi’s OpenCV build, swap in
    `cv::calcOpticalFlowFarneback` and tell Gio so the Mac side matches.
 
 **Gio**
@@ -128,22 +134,30 @@ TFLite.
 
 ## Wiring (BCM GPIO numbers, physical pins in parentheses)
 
+The demo uses LEDs only. We can't put a real valve on lighter gas, so a "valve" LED on GPIO17
+stands in for a normally-closed solenoid valve: lit means open, and in a real install that pin
+would drive a relay that cuts the gas line.
+
 | Part              | Connection                                                              |
 |-------------------|-------------------------------------------------------------------------|
-| Relay module      | VCC to 5 V (2), GND (6), IN to GPIO17 (11). Valve or demo load on COM and NO, so it only gets power while the relay is energized |
+| Valve LED         | GPIO17 (11) through a resistor (220 to 330 Ω) to GND (9). Lit = valve open |
 | Green LED, open   | GPIO27 (13) through a resistor to GND (14)                              |
 | Red LED, tripped  | GPIO22 (15) through a resistor to GND (20)                              |
-| Buzzer module     | Signal GPIO23 (16), VCC 3.3 V (17), GND (25)                            |
-| Reset button      | Signal GPIO24 (18), VCC **3.3 V (1), never 5 V**, GND (39)              |
+| Buzzer (optional) | Signal GPIO23 (16), VCC 3.3 V (17), GND (25). Unused without one         |
+| Button (optional) | GPIO24 (18) to GND (39) through the button. The supervisor enables the pull-up, so leaving it unwired is safe |
 
-If the relay clicks on when IN is low, set `RELAY_ACTIVE_HIGH 0` in `supervisor.c`. Prefer an
-active-high module, because then a dead Pi can never hold the valve open.
+LED long leg (anode) to the GPIO pin, short leg through the resistor to GND. Without a button,
+reset from SSH with `./mirage_ctl reset`. If you later add a relay module and it switches on
+when IN is low, set `RELAY_ACTIVE_HIGH 0` in `supervisor.c`; prefer an active-high module,
+because then a dead Pi can never hold the valve open.
 
 ## The chaos demo (about 60 s at the table)
 
-1. Valve open, dashboard green.
-2. Puff the lighter. The valve trips; the dashboard shows “first gas frame to valve” in ms.
-3. Press reset while gas is still there: refused. Press again once it clears: accepted.
+1. Valve LED and green LED on, dashboard green.
+2. Puff the lighter. The valve trips (valve LED off, red LED on); the dashboard shows
+   “first gas frame to valve” in ms.
+3. Run `./mirage_ctl reset` (or press the button, if wired) while gas is still there: refused.
+   Again once it clears: accepted.
 4. `./cpu_hog 15 4 10`: nothing happens, because vision outranks the hog.
 5. `./cpu_hog 30 4 10`: vision starves, the supervisor fails closed within 250 ms. Your SSH session
    freezes for those 10 s; that’s expected.

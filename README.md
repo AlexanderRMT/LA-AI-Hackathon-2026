@@ -58,7 +58,7 @@ when you start.
 |-----------------|---------------------------------------------|---------------------------------------------|-------------------------------------------|
 | Hour 0 to 1     | Boot QNX, clone `qnx/QNX-AI-workshop`, camera running | Supervisor + mock_vision on the VM           | Kill test in `bos_proto.py`; get props    |
 | **Checkpoint 1**| All three report: frames on the Pi, IPC working, plume visible on the Mac |  |  |
-| Hour 1 to 3     | `mirage_hook.cpp` in the workshop app, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the three LEDs; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
+| Hour 1 to 3     | `mirage_vision` on Alex’s camera code, physics-only rule, dumping fields | Supervisor on the Pi with real GPIO; wire the three LEDs; build the rig | Tune DIS on the Mac; dashboard against telemetry from mock_vision |
 | **Checkpoint 2**| First real trip: lighter puff → Pi → supervisor → valve LED goes off |  |  |
 | Hour 3 to 4     | Recording session, all three, on the final rig (protocol below) |  |  |
 | Hour 4 to 7     | Load model v1, measure CPU time per frame   | Latency logging, run_mirage.sh, false-trip runs | Train v1, then v2 on Pi dumps; dashboard polish |
@@ -78,8 +78,9 @@ the gas or heat source about halfway. Reset the reference after any bump.
 | `motion_`     | Hand waving in front, walking past, light table bumps                |
 | `clear_`      | Nothing in front, normal room activity                               |
 
-On the Pi: `mkdir -p /data/home/qnxuser/rec/gas_lighter_01`, start the vision app with that dump dir,
-then on the Mac: `scp -r qnxuser@qnxpi.local:/data/home/qnxuser/rec ./pi_dumps`.
+On the Pi: `mkdir -p /data/home/qnxuser/rec/gas_lighter_01`, start `mirage_vision -d` with that folder
+(one folder per clip: starting again on the same folder overwrites it), then on the Mac:
+`scp -r qnxuser@qnxpi.local:/data/home/qnxuser/rec ./pi_dumps`.
 Quiet frames inside an active clip are relabeled clear automatically by `train.py`.
 
 ## Commands
@@ -102,15 +103,19 @@ scp supervisor mirage_ctl cpu_hog tools/run_mirage.sh qnxuser@qnxpi.local:/data/
 ```
 On the Pi, check `ls /dev/gpio` first. The supervisor drives outputs through `/dev/gpio/msg`.
 
-**Jaime**
-1. Clone `qnx/QNX-AI-workshop`, run its `configure.sh`, and get the hand demo showing the camera.
-   On image 8.0.5 or newer the README says which camera unit to pass.
-2. Add `vision/bos_engine.cpp` and `vision/mirage_hook.cpp` to its build. Call
-   `mirage_init(roi, model_path, dump_dir, dashboard_ip)` once and `mirage_on_frame(frame, ts)` from
-   the camera callback in place of the hand models.
-3. Find the ROI by saving one frame and measuring where the dot screen sits.
-4. Run it at priority 20 (`on -p 20 ./app`) or through `tools/run_mirage.sh`.
-5. If `cv::DISOpticalFlow` is missing from the Pi’s OpenCV build, swap in
+**Jaime** (`vision/mirage_vision.cpp` runs the pipeline on Alex’s camera code)
+1. On the Pi, from the repo root, install the libraries the workshop’s `configure.sh` would (minus
+   its GUI and ROS) and build:
+   ```sh
+   sudo apk add opencv-dev tflite-runtime tflite-runtime-dev flatbuffers-dev qnx-sf-base-dev
+   make mirage_vision CXX=clang++ EXTRA_CXXFLAGS=-I.
+   ```
+2. Find the ROI: run `./mirage_vision`, then `.\pull_frame.ps1` on Windows. It saves the exact frame
+   the engine processes; read the dot screen’s top-left corner, width and height in Paint.
+3. Run it at priority 20 with the ROI: `on -p 20 ./mirage_vision -s x,y,w,h -i <mac ip>`, or through
+   `tools/run_mirage.sh`. Add `-m model.tflite` once Gio’s model arrives and `-d <folder>` to record.
+   After a bump, `slay -s SIGUSR1 mirage_vision` takes a new reference frame.
+4. If `cv::DISOpticalFlow` is missing from the Pi’s OpenCV build, swap in
    `cv::calcOpticalFlowFarneback` and tell Gio so the Mac side matches.
 
 **Gio**
