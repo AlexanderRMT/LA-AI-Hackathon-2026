@@ -1,0 +1,25 @@
+{
+  "input": [
+    1,
+    64,
+    64,
+    8
+  ],
+  "dtype": "float32",
+  "channels": "dx, dy for each field, oldest first",
+  "clip_px": 4.0,
+  "scale": 0.5,
+  "proc_hz": 10.0,
+  "labels": [
+    "clear",
+    "gas",
+    "heat",
+    "motion"
+  ],
+  "active_px": {
+    "gas": 0.12,
+    "heat": 0.04,
+    "motion": 0.1
+  },
+  "ops": "CONV_2D v1, MEAN v1, FULLY_CONNECTED v1, SOFTMAX v1"
+}

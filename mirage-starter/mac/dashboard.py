@@ -7,6 +7,7 @@ pass the same IP to mirage_init() on the Pi.
 
   pip install opencv-python numpy
   python dashboard.py
+  python fake_pi.py           in another terminal: fake telemetry, no Pi needed
 """
 import collections
 import json
@@ -39,7 +40,10 @@ def main():
                 data, _ = tel_sock.recvfrom(2048)
             except BlockingIOError:
                 break
-            state = json.loads(data.decode())
+            try:
+                state = json.loads(data.decode())
+            except ValueError:
+                continue                                # a stray or truncated packet
             last_rx = time.time()
             history.append((state.get("p_gas", 0.0), state.get("tripped", 1)))
             if state.get("lat_ms", 0) > 0:
@@ -76,7 +80,7 @@ def main():
             p99 = float(np.percentile(np.asarray(lat), 99))
             lines.append(f"latency p99 over last {len(lat)}: {p99:.1f} ms")
         for i, text in enumerate(lines):
-            cv2.putText(canvas, text, (x0, 120 + 32 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (225, 232, 238), 1)
+            cv2.putText(canvas, text, (x0, 120 + 32 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (225, 232, 238), 1)
         # p(gas) strip: one bar per verdict, red while tripped
         y0, bw = H - 30, max(1, (W - 40) // max(1, history.maxlen))
         cv2.line(canvas, (20, y0), (W - 20, y0), (90, 90, 90), 1)

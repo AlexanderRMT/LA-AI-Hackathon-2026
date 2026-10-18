@@ -1,0 +1,7 @@
+# Python environment
+.venv/
+__pycache__/
+
+# Training data (large; share outside git)
+recordings/
+pi_dumps/

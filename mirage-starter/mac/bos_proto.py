@@ -12,9 +12,10 @@ It copies the processing steps in vision/bos_engine.cpp, so keep the constants i
 
 Keys: r new reference   0 clear  1 gas  2 heat  3 motion (sets the label)
       space start/stop recording   q quit
-Setup: point the camera at the dot background (Mirage page, "Use this screen as the dot
-background"), hold everything still, press r, then puff an unlit lighter about halfway
-between the camera and the screen.
+Setup: point the camera at the dot background (mac/dots.html on another screen, or the Mirage
+page's dot background), hold everything still, press r, then puff an unlit lighter about halfway
+between the camera and the screen. Videos must start with 2 s of nothing in view: the first
+frame becomes the reference.
 """
 import argparse
 import os
@@ -76,7 +77,7 @@ def main():
     ref, smooth = None, None
     label, recording = args.label, args.headless
     fields, times, peaks = [], [], []
-    last_proc, frame_idx, t0 = -1e9, 0, time.time()
+    period, next_proc, frame_idx, t0 = 1.0 / PROC_HZ, None, 0, time.time()
     fps_count, fps_t, fps = 0, time.time(), 0.0
 
     while True:
@@ -85,9 +86,11 @@ def main():
             break
         frame_idx += 1
         t = frame_idx / video_fps if (args.video and video_fps > 0) else time.time() - t0
-        if ref is not None and t - last_proc < 1.0 / PROC_HZ - 1e-6:
-            continue                                   # fixed processing rate, same as the Pi
-        last_proc = t
+        # Fixed 10 Hz schedule, same as the Pi. Comparing against the last processed frame instead
+        # drifts to 7.5-8.5 Hz when the camera runs a hair fast or its timestamps jitter.
+        if ref is not None and next_proc is not None and t < next_proc - 0.2 * period:
+            continue
+        next_proc = next_proc + period if (next_proc is not None and t < next_proc + period) else t + period
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y:y + h, x:x + w]
         if ref is None:
             ref, smooth = gray.copy(), None
